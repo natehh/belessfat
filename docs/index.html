@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>belessfat Support</title>
+  <style>
+    :root {
+      --bg: #f6f7f9;
+      --card: #ffffff;
+      --text: #1c1c1e;
+      --muted: #6b7280;
+      --accent: #007aff;
+      --border: #e5e7eb;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.55;
+    }
+    main {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 48px 20px 72px;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 28px 24px;
+      margin-bottom: 16px;
+    }
+    h1 { margin: 0 0 8px; font-size: 2rem; }
+    h2 { margin: 0 0 12px; font-size: 1.15rem; }
+    p, li { color: var(--muted); }
+    a { color: var(--accent); }
+    .brand { font-weight: 700; color: var(--text); }
+    ul { padding-left: 1.2rem; }
+    footer {
+      margin-top: 28px;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="card">
+      <h1 class="brand">belessfat</h1>
+      <p>Support for the belessfat iOS app — a free, local-first calorie, macro, and progress tracker.</p>
+    </div>
+
+    <div class="card">
+      <h2>Contact</h2>
+      <p>
+        Need help, found a bug, or have a feature request?
+        Email <a href="mailto:nathanhherr@gmail.com">nathanhherr@gmail.com</a>
+        or open an issue on
+        <a href="https://github.com/natehh/belessfat/issues">GitHub</a>.
+      </p>
+    </div>
+
+    <div class="card">
+      <h2>App notes</h2>
+      <ul>
+        <li>belessfat is fully free — no subscriptions and no features behind a paywall.</li>
+        <li>Your diary, weight, workouts, and progress photos stay on your device.</li>
+        <li>Optional AI features use <strong>your own API key</strong> (BYOK). Keys are stored in the iOS Keychain.</li>
+        <li>HealthKit access is optional and only used for steps/activity you authorize.</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h2>Privacy</h2>
+      <p>Read the <a href="./privacy.html">Privacy Policy</a>.</p>
+    </div>
+
+    <footer>© 2026 Nathan Heitmann Herr</footer>
+  </main>
+</body>
+</html>

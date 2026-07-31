@@ -1,0 +1,9 @@
+*.xcuserstate
+xcuserdata/
+DerivedData/
+.derivedData/
+build/
+.DS_Store
+Config.local.xcconfig
+*.mobileprovision
+*.p12
