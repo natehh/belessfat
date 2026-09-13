@@ -4,12 +4,20 @@ import SwiftData
 @MainActor
 enum DiaryService {
     static func entries(for date: Date, context: ModelContext) -> [LogEntry] {
-        let day = DateHelpers.startOfDay(date)
+        let start = DateHelpers.startOfDay(date)
+        let end = DateHelpers.startOfNextDay(date)
         let descriptor = FetchDescriptor<LogEntry>(
-            predicate: #Predicate { $0.date == day },
+            predicate: #Predicate { entry in
+                entry.date >= start && entry.date < end
+            },
             sortBy: [SortDescriptor(\.createdAt)]
         )
-        return (try? context.fetch(descriptor)) ?? []
+        do {
+            return try context.fetch(descriptor)
+        } catch {
+            print("[Diary] fetch entries failed: \(error)")
+            return []
+        }
     }
 
     static func totals(for date: Date, context: ModelContext) -> MacroTotals {
@@ -18,14 +26,18 @@ enum DiaryService {
 
     static func weekTotals(containing date: Date, weekStartsOn: WeekStartDay = .monday, context: ModelContext) -> MacroTotals {
         let weekStart = DateHelpers.weekStart(containing: date, weekStartsOn: weekStartsOn)
-        let weekEnd = DateHelpers.weekEnd(containing: date, weekStartsOn: weekStartsOn)
+        let weekEndExclusive = DateHelpers.startOfNextDay(DateHelpers.weekEnd(containing: date, weekStartsOn: weekStartsOn))
         let descriptor = FetchDescriptor<LogEntry>(
             predicate: #Predicate { entry in
-                entry.date >= weekStart && entry.date <= weekEnd
+                entry.date >= weekStart && entry.date < weekEndExclusive
             }
         )
-        let entries = (try? context.fetch(descriptor)) ?? []
-        return entries.reduce(.zero) { $0 + $1.macros }
+        do {
+            return try context.fetch(descriptor).reduce(.zero) { $0 + $1.macros }
+        } catch {
+            print("[Diary] fetch week totals failed: \(error)")
+            return .zero
+        }
     }
 
     static func addEntry(

@@ -7,6 +7,7 @@ struct DiaryView: View {
     @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject private var healthKit: HealthKitService
     @Query(sort: \UserSettings.id) private var settingsQuery: [UserSettings]
+    @Query(sort: \LogEntry.createdAt) private var allLogEntries: [LogEntry]
     @Query(sort: \DailyHealthSnapshot.date, order: .reverse) private var healthSnapshots: [DailyHealthSnapshot]
     @Query(sort: \WeightGoal.targetDate, order: .reverse) private var weightGoals: [WeightGoal]
     @Query(sort: \WeightEntry.date, order: .reverse) private var allWeightEntries: [WeightEntry]
@@ -32,15 +33,21 @@ struct DiaryView: View {
     }
 
     private var entries: [LogEntry] {
-        DiaryService.entries(for: selectedDate, context: context)
+        allLogEntries.filter { DateHelpers.isSameDay($0.date, selectedDate) }
     }
 
     private var totals: MacroTotals {
-        DiaryService.totals(for: selectedDate, context: context)
+        entries.reduce(.zero) { $0 + $1.macros }
     }
 
     private var weekTotals: MacroTotals {
-        DiaryService.weekTotals(containing: selectedDate, weekStartsOn: settings.weekStartDay, context: context)
+        let start = DateHelpers.weekStart(containing: selectedDate, weekStartsOn: settings.weekStartDay)
+        let endExclusive = DateHelpers.startOfNextDay(
+            DateHelpers.weekEnd(containing: selectedDate, weekStartsOn: settings.weekStartDay)
+        )
+        return allLogEntries
+            .filter { $0.date >= start && $0.date < endExclusive }
+            .reduce(.zero) { $0 + $1.macros }
     }
 
     private var weekRangeLabel: String {

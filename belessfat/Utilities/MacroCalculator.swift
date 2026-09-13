@@ -356,6 +356,10 @@ enum DateHelpers {
         Calendar.current.startOfDay(for: date)
     }
 
+    static func startOfNextDay(_ date: Date) -> Date {
+        Calendar.current.date(byAdding: .day, value: 1, to: startOfDay(date)) ?? startOfDay(date)
+    }
+
     static func isSameDay(_ a: Date, _ b: Date) -> Bool {
         Calendar.current.isDate(a, inSameDayAs: b)
     }
