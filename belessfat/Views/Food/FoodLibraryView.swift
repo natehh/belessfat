@@ -329,6 +329,10 @@ struct RecipeLibraryDetailView: View {
                 LabeledContent("Protein", value: "\(m.protein.formatted(.number.precision(.fractionLength(0...1)))) g")
                 LabeledContent("Carbs", value: "\(m.carbs.formatted(.number.precision(.fractionLength(0...1)))) g")
                 LabeledContent("Fat", value: "\(m.fat.formatted(.number.precision(.fractionLength(0...1)))) g")
+                let servingGrams = recipe.gramsPerServing()
+                if servingGrams > 0 {
+                    LabeledContent("Weight", value: "\(Int(servingGrams.rounded())) g")
+                }
             }
 
             Section("Total") {
@@ -337,6 +341,10 @@ struct RecipeLibraryDetailView: View {
                 LabeledContent("Protein", value: "\(m.protein.formatted(.number.precision(.fractionLength(0...1)))) g")
                 LabeledContent("Carbs", value: "\(m.carbs.formatted(.number.precision(.fractionLength(0...1)))) g")
                 LabeledContent("Fat", value: "\(m.fat.formatted(.number.precision(.fractionLength(0...1)))) g")
+                let batchGrams = recipe.batchGrams()
+                if batchGrams > 0 {
+                    LabeledContent("Weight", value: "\(Int(batchGrams.rounded())) g")
+                }
             }
 
             Section("Ingredients") {
@@ -346,7 +354,15 @@ struct RecipeLibraryDetailView: View {
                 } else {
                     ForEach(recipe.ingredients) { ingredient in
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(ingredient.food?.displayName ?? "Unknown ingredient")
+                            HStack(spacing: 6) {
+                                Text(ingredient.food?.displayName ?? "Unknown ingredient")
+                                if ingredient.isAdjustableAtLog {
+                                    Image(systemName: "slider.horizontal.3")
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                        .accessibilityLabel("Adjustable when logging")
+                                }
+                            }
                             HStack {
                                 if let food = ingredient.food {
                                     Text("\(ingredient.quantity.formatted(.number.precision(.fractionLength(0...2)))) \(ServingConverter.servingLabel(for: ingredient.servingUnit, food: food))")

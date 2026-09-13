@@ -71,7 +71,7 @@ enum KeychainStore {
 }
 
 enum FoodEstimateAgentStore {
-    private static let agentIdKey = "cursorFoodEstimateAgentId"
+    private static let agentIdKey = "cursorFoodEstimateAgentIdV2"
 
     static var agentId: String? {
         get { UserDefaults.standard.string(forKey: agentIdKey) }

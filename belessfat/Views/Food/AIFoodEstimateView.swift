@@ -3,8 +3,14 @@ import SwiftData
 import PhotosUI
 import UIKit
 
+private struct ParsedEstimateItem: Identifiable {
+    let id = UUID()
+    let recipe: ParsedWebRecipe
+}
+
 struct AIFoodEstimateView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var context
     let selectedDate: Date
     let defaultMeal: MealCategory
     let onDone: () -> Void
@@ -13,7 +19,7 @@ struct AIFoodEstimateView: View {
     @State private var promptCopied = false
     @State private var replyText = ""
     @State private var importError: String?
-    @State private var importedPrefill: AIFoodEstimateResult?
+    @State private var parsedReview: ParsedEstimateItem?
     @State private var showCamera = false
     @State private var selectedLibraryItem: PhotosPickerItem?
     @State private var isEstimating = false
@@ -78,7 +84,7 @@ struct AIFoodEstimateView: View {
                     } header: {
                         Text("In-app estimate")
                     } footer: {
-                        Text("Uses your AI API key from Settings. The photo is sent to your selected provider. Review the result before saving.")
+                        Text("Uses your AI API key from Settings. The AI identifies foods and amounts; you review USDA / Open Food Facts matches before saving.")
                     }
                 } else {
                     Section {
@@ -95,7 +101,7 @@ struct AIFoodEstimateView: View {
                 } header: {
                     Text(hasAPIKey ? "Clipboard fallback" : "How it works")
                 } footer: {
-                    Text("The AI should reply with JSON. Review the values before saving — estimates can be wrong.")
+                    Text("The AI should reply with JSON ingredients. You’ll match them to the food database and review before saving.")
                 }
 
                 Section("Prompt") {
@@ -124,11 +130,11 @@ struct AIFoodEstimateView: View {
                     }
                     .buttonBorderShape(.capsule)
                     Button {
-                        importReply()
+                        Task { await importReply() }
                     } label: {
                         Label("Import Reply", systemImage: "square.and.arrow.down")
                     }
-                    .disabled(replyText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .disabled(replyText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isEstimating)
                 } header: {
                     Text("AI Reply")
                 } footer: {
@@ -185,17 +191,20 @@ struct AIFoodEstimateView: View {
                 guard let newItem else { return }
                 Task { await estimateFromLibrary(newItem) }
             }
-            .sheet(item: $importedPrefill) { prefill in
-                CustomFoodFormView(
-                    barcode: nil,
-                    aiPrefill: prefill,
-                    selectedDate: selectedDate,
-                    defaultMeal: defaultMeal,
-                    onDone: {
-                        dismiss()
-                        onDone()
-                    }
-                )
+            .sheet(item: $parsedReview) { item in
+                NavigationStack {
+                    RecipeImportReviewView(
+                        parsed: item.recipe,
+                        selectedDate: selectedDate,
+                        defaultMeal: defaultMeal,
+                        mode: .mealEstimate,
+                        onFinished: { _ in
+                            parsedReview = nil
+                            dismiss()
+                            onDone()
+                        }
+                    )
+                }
             }
             .onAppear {
                 hasAPIKey = AIAssistant.hasConfiguredKey
@@ -203,9 +212,10 @@ struct AIFoodEstimateView: View {
         }
     }
 
-    private func importReply() {
+    private func importReply() async {
         do {
-            importedPrefill = try AIFoodEstimateService.parse(replyText)
+            let draft = try AIFoodEstimateService.parse(replyText)
+            await matchAndReview(draft)
         } catch {
             let detail = error.localizedDescription
             importError = "\(detail) If Paste didn’t work, tap the text box and paste manually."
@@ -234,7 +244,7 @@ struct AIFoodEstimateView: View {
             estimateStatus = ""
         }
         do {
-            importedPrefill = try await AIAssistant.estimateFood(
+            let draft = try await AIAssistant.estimateFood(
                 from: image,
                 foodNameHint: trimmedFoodNameHint,
                 onStatus: { status in
@@ -243,14 +253,22 @@ struct AIFoodEstimateView: View {
                     }
                 }
             )
+            await matchAndReview(draft)
         } catch {
             importError = error.localizedDescription
         }
     }
-}
 
-extension AIFoodEstimateResult: Identifiable {
-    var id: String {
-        "\(name)-\(calories)-\(protein)-\(carbs)-\(fat)"
+    private func matchAndReview(_ draft: AIRecipeImportDraft) async {
+        isEstimating = true
+        estimateStatus = "Matching foods…"
+        defer {
+            isEstimating = false
+            estimateStatus = ""
+        }
+        let parsed = await AIRecipeImportService.matchIngredients(draft, context: context)
+        var recipe = parsed
+        ServingConverter.applyPreferredWeightUnit(to: &recipe.ingredients)
+        parsedReview = ParsedEstimateItem(recipe: recipe)
     }
 }

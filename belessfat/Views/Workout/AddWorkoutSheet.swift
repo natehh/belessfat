@@ -52,10 +52,10 @@ struct AddWorkoutSheet: View {
                     includesSteps: workoutType != .strength
                 )
 
-                Section("Apple Health") {
-                    Toggle("Sync to Apple Health", isOn: $syncToHealthKit)
+                Section("HealthKit") {
+                    Toggle("Sync to HealthKit", isOn: $syncToHealthKit)
                     if syncToHealthKit {
-                        Text("Calories and estimated steps will be written to Apple Health for the food diary to read.")
+                        Text(HealthKitCopy.workoutWriteDescription)
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }

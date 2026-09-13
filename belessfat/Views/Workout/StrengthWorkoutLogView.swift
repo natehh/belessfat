@@ -64,7 +64,7 @@ struct StrengthWorkoutLogView: View {
                         step: 5,
                         suffix: "min"
                     )
-                    Toggle("Sync calories to Apple Health", isOn: $syncToHealthKit)
+                    Toggle("Sync calories to HealthKit", isOn: $syncToHealthKit)
                     if prefilledFromLastSession, let templateName = session.template?.name {
                         Text("Prefilled from your last \(templateName) workout.")
                             .font(.caption)
@@ -81,8 +81,12 @@ struct StrengthWorkoutLogView: View {
 
                 ForEach(exerciseGroups) { group in
                     Section(group.name) {
-                        ForEach(group.sets.sorted(by: { $0.setIndex < $1.setIndex }), id: \.id) { setLog in
+                        let sets = group.sets.sorted(by: { $0.setIndex < $1.setIndex })
+                        ForEach(sets, id: \.id) { setLog in
                             SetLogRow(setLog: setLog)
+                        }
+                        .onDelete { offsets in
+                            deleteSets(sets, at: offsets)
                         }
                         Button("Add Set") {
                             addSet(for: group)
@@ -161,6 +165,13 @@ struct StrengthWorkoutLogView: View {
             isWarmup: false,
             context: context
         )
+    }
+
+    private func deleteSets(_ sets: [WorkoutSetLog], at offsets: IndexSet) {
+        let logs = offsets.compactMap { index in
+            sets.indices.contains(index) ? sets[index] : nil
+        }
+        WorkoutService.deleteSetLogs(logs, from: session, context: context)
     }
 
     private func saveSession() {
@@ -281,8 +292,8 @@ struct CardioWorkoutDetailView: View {
                     includesSteps: true
                 )
 
-                Section("Apple Health") {
-                    Toggle("Sync to Apple Health", isOn: $syncToHealthKit)
+                Section("HealthKit") {
+                    Toggle("Sync to HealthKit", isOn: $syncToHealthKit)
                 }
 
                 Section("Current Estimates") {
@@ -292,7 +303,7 @@ struct CardioWorkoutDetailView: View {
                     if session.estimatedSteps > 0 {
                         LabeledContent("Est. Steps", value: "\(session.estimatedSteps)")
                     }
-                    Text("Editing the end time re-writes the samples in Apple Health at the new time. Use a window where your phone wasn't counting steps so they aren't deduplicated.")
+                    Text("Editing the end time re-writes the samples in HealthKit at the new time. Use a window where your phone wasn't counting steps so they aren't deduplicated.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

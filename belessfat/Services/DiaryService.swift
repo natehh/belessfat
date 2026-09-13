@@ -44,13 +44,73 @@ enum DiaryService {
     static func addEntry(
         recipe: Recipe,
         quantity: Double,
+        unit: ServingUnitType = .serving,
         meal: MealCategory,
         date: Date,
-        context: ModelContext
+        context: ModelContext,
+        adjustableOverrides: [UUID: (quantity: Double, unit: ServingUnitType)] = [:]
     ) {
-        let entry = LogEntry(date: date, mealCategory: meal, quantity: quantity, servingUnit: .serving, recipe: recipe)
+        let entry = LogEntry(date: date, mealCategory: meal, quantity: quantity, servingUnit: unit, recipe: recipe)
+        applyRecipeOverrides(adjustableOverrides, to: entry, recipe: recipe, quantity: quantity, unit: unit)
         context.insert(entry)
         try? context.save()
+    }
+
+    static func updateRecipeEntry(
+        _ entry: LogEntry,
+        recipe: Recipe,
+        quantity: Double,
+        unit: ServingUnitType,
+        meal: MealCategory,
+        adjustableOverrides: [UUID: (quantity: Double, unit: ServingUnitType)],
+        context: ModelContext
+    ) {
+        entry.quantity = quantity
+        entry.servingUnit = unit
+        entry.mealCategory = meal
+        applyRecipeOverrides(adjustableOverrides, to: entry, recipe: recipe, quantity: quantity, unit: unit)
+        try? context.save()
+    }
+
+    private static func applyRecipeOverrides(
+        _ overrides: [UUID: (quantity: Double, unit: ServingUnitType)],
+        to entry: LogEntry,
+        recipe: Recipe,
+        quantity: Double,
+        unit: ServingUnitType
+    ) {
+        entry.recipeOverrideMap = overrides
+        if shouldSnapshotRecipeLog(recipe: recipe, overrides: overrides) {
+            let totals = recipe.macros(for: quantity, unit: unit, overrides: overrides)
+            let divisor = max(quantity, 0.01)
+            entry.applyRecipeSnapshot(
+                name: recipe.name,
+                macrosPerQuantity: MacroTotals(
+                    calories: totals.calories / divisor,
+                    protein: totals.protein / divisor,
+                    carbs: totals.carbs / divisor,
+                    fat: totals.fat / divisor
+                )
+            )
+        } else {
+            entry.clearRecipeSnapshot()
+        }
+    }
+
+    /// Snapshot when any adjustable ingredient differs from the recipe default.
+    private static func shouldSnapshotRecipeLog(
+        recipe: Recipe,
+        overrides: [UUID: (quantity: Double, unit: ServingUnitType)]
+    ) -> Bool {
+        guard !overrides.isEmpty else { return false }
+        for ingredient in recipe.adjustableIngredients {
+            guard let override = overrides[ingredient.id] else { continue }
+            if abs(override.quantity - ingredient.quantity) > 0.000_001
+                || override.unit != ingredient.servingUnit {
+                return true
+            }
+        }
+        return false
     }
 
     static func delete(_ entry: LogEntry, context: ModelContext) {
@@ -108,6 +168,7 @@ enum DiaryService {
         copy.snapshotProteinPerQuantity = entry.snapshotProteinPerQuantity
         copy.snapshotCarbsPerQuantity = entry.snapshotCarbsPerQuantity
         copy.snapshotFatPerQuantity = entry.snapshotFatPerQuantity
+        copy.recipeIngredientOverridesJSON = entry.recipeIngredientOverridesJSON
         return copy
     }
 

@@ -115,6 +115,60 @@ enum ServingPortionMapper {
 
 enum ServingConverter {
     static let gramsPerOunce = 28.3495
+    static let preferredWeightUnitStorageKey = "preferredWeightUnit"
+
+    /// User's preferred weight unit for AI photo estimates. Defaults to ounces.
+    static var preferredWeightUnit: ServingUnitType {
+        let raw = UserDefaults.standard.string(forKey: preferredWeightUnitStorageKey)
+        return raw == ServingUnitType.grams.rawValue ? .grams : .ounces
+    }
+
+    static func convertWeight(_ quantity: Double, from: ServingUnitType, to: ServingUnitType) -> Double {
+        guard from != to else { return quantity }
+        let grams: Double
+        switch from {
+        case .grams: grams = quantity
+        case .ounces: grams = quantity * gramsPerOunce
+        default: return quantity
+        }
+        switch to {
+        case .grams:
+            return max(grams.rounded(), 1)
+        case .ounces:
+            let oz = grams / gramsPerOunce
+            let quarter = (oz * 4).rounded() / 4
+            if quarter >= 0.25 { return quarter }
+            return max((oz * 100).rounded() / 100, 0.01)
+        default:
+            return quantity
+        }
+    }
+
+    static func applyPreferredWeightUnit(to ingredients: inout [RecipeImportIngredient]) {
+        let preferred = preferredWeightUnit
+        guard preferred == .grams || preferred == .ounces else { return }
+        for index in ingredients.indices {
+            let unit = ingredients[index].servingUnit
+            guard unit == .grams || unit == .ounces, unit != preferred else { continue }
+            ingredients[index].quantity = convertWeight(
+                ingredients[index].quantity,
+                from: unit,
+                to: preferred
+            )
+            ingredients[index].servingUnit = preferred
+        }
+    }
+
+    static func resolvedGrams(amount: Double?, unit: ServingUnitType, gramWeight: Double?) -> Double {
+        if let gramWeight, gramWeight > 0 { return gramWeight }
+        guard let amount, amount > 0 else { return 0 }
+        switch unit {
+        case .grams: return amount
+        case .ounces: return amount * gramsPerOunce
+        case .teaspoon, .tablespoon, .cup, .serving, .small, .medium, .large:
+            return 0
+        }
+    }
 
     static func gramsAmount(quantity: Double, unit: ServingUnitType, food: Food) -> Double {
         switch unit {

@@ -124,11 +124,28 @@ struct RecipeDetailView: View {
                 LabeledContent("Protein", value: "\(m.protein.formatted())g")
                 LabeledContent("Carbs", value: "\(m.carbs.formatted())g")
                 LabeledContent("Fat", value: "\(m.fat.formatted())g")
+                let servingGrams = recipe.gramsPerServing()
+                if servingGrams > 0 {
+                    LabeledContent("Weight", value: "\(Int(servingGrams.rounded()))g")
+                }
+            }
+            let batchGrams = recipe.batchGrams()
+            if batchGrams > 0 {
+                Section("Total") {
+                    LabeledContent("Weight", value: "\(Int(batchGrams.rounded()))g")
+                }
             }
             Section("Ingredients") {
                 ForEach(recipe.ingredients) { ing in
                     HStack {
-                        Text(ing.food?.displayName ?? "?")
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(ing.food?.displayName ?? "?")
+                            if ing.isAdjustableAtLog {
+                                Label("Adjustable", systemImage: "slider.horizontal.3")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
                         Spacer()
                         if let food = ing.food {
                             Text("\(ing.quantity.formatted()) \(ServingConverter.servingLabel(for: ing.servingUnit, food: food))")
@@ -181,12 +198,25 @@ struct RecipeEditorView: View {
     @State private var showFoodPicker = false
     @State private var editingIngredient: RecipeIngredient?
     @State private var showDeleteConfirm = false
+    @State private var usesCustomYield = false
+    @State private var yieldIsPerServing = false
+    @State private var yieldAmount = ""
+    @State private var yieldUnit: ServingUnitType = .grams
+    @State private var yieldGramWeight = ""
 
     var body: some View {
         NavigationStack {
             Form {
                 TextField("Recipe Name", text: $name)
                 NumericStepperField(title: "Servings", value: $servings, range: 0.01...50, step: 0.25, format: "%g")
+                RecipeYieldFields(
+                    usesCustomYield: $usesCustomYield,
+                    yieldIsPerServing: $yieldIsPerServing,
+                    yieldAmount: $yieldAmount,
+                    yieldUnit: $yieldUnit,
+                    yieldGramWeight: $yieldGramWeight,
+                    onEnable: prefillYieldFromIngredients
+                )
                 if let recipe {
                     Section("Ingredients") {
                         ForEach(recipe.ingredients) { ingredient in
@@ -194,7 +224,14 @@ struct RecipeEditorView: View {
                                 editingIngredient = ingredient
                             } label: {
                                 HStack {
-                                    Text(ingredient.food?.displayName ?? "?")
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(ingredient.food?.displayName ?? "?")
+                                        if ingredient.isAdjustableAtLog {
+                                            Label("Adjustable", systemImage: "slider.horizontal.3")
+                                                .font(.caption2)
+                                                .foregroundStyle(.secondary)
+                                        }
+                                    }
                                     Spacer()
                                     if let food = ingredient.food {
                                         Text("\(RecipeServingsScaler.formatQuantity(ingredient.quantity)) \(ServingConverter.servingLabel(for: ingredient.servingUnit, food: food))")
@@ -218,6 +255,9 @@ struct RecipeEditorView: View {
                         LabeledContent("Protein", value: "\(macros.protein.formatted())g")
                         LabeledContent("Carbs", value: "\(macros.carbs.formatted())g")
                         LabeledContent("Fat", value: "\(macros.fat.formatted())g")
+                        if previewGramsPerServing > 0 {
+                            LabeledContent("Weight", value: "\(Int(previewGramsPerServing.rounded()))g")
+                        }
                     }
                 }
                 if existingRecipe != nil {
@@ -255,7 +295,14 @@ struct RecipeEditorView: View {
                         title: "Edit Ingredient",
                         confirmTitle: "Save",
                         initialQuantity: ingredient.quantity,
-                        initialUnit: ingredient.servingUnit
+                        initialUnit: ingredient.servingUnit,
+                        isAdjustableAtLog: Binding(
+                            get: { ingredient.isAdjustableAtLog },
+                            set: {
+                                ingredient.isAdjustableAtLog = $0
+                                try? context.save()
+                            }
+                        )
                     ) { quantity, unit in
                         ingredient.quantity = quantity
                         ingredient.servingUnit = unit
@@ -268,6 +315,7 @@ struct RecipeEditorView: View {
                     recipe = existingRecipe
                     name = existingRecipe.name
                     servings = existingRecipe.servings
+                    loadYield(from: existingRecipe)
                 }
             }
             .confirmationDialog("Delete Recipe?", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
@@ -292,15 +340,120 @@ struct RecipeEditorView: View {
         }
     }
 
+    private var previewGramsPerServing: Double {
+        previewBatchGrams / max(servings, 0.01)
+    }
+
+    private var previewBatchGrams: Double {
+        let defined = ServingConverter.resolvedGrams(
+            amount: Double(yieldAmount).flatMap { $0 > 0 ? $0 : nil },
+            unit: yieldUnit,
+            gramWeight: Double(yieldGramWeight).flatMap { $0 > 0 ? $0 : nil }
+        )
+        if usesCustomYield, defined > 0 {
+            return yieldIsPerServing ? defined * max(servings, 0.01) : defined
+        }
+        return recipe?.ingredientTotalGrams() ?? 0
+    }
+
+    private func loadYield(from recipe: Recipe) {
+        usesCustomYield = recipe.usesCustomYield
+        yieldIsPerServing = recipe.yieldIsPerServing
+        yieldUnit = recipe.yieldUnit
+        yieldAmount = recipe.yieldAmount > 0 ? String(format: "%g", recipe.yieldAmount) : ""
+        yieldGramWeight = recipe.yieldGramWeight > 0 ? String(format: "%g", recipe.yieldGramWeight) : ""
+    }
+
+    private func applyYieldDraft(to recipe: Recipe) {
+        recipe.usesCustomYield = usesCustomYield
+        recipe.yieldIsPerServing = yieldIsPerServing
+        recipe.yieldUnit = yieldUnit
+        recipe.yieldAmount = Double(yieldAmount) ?? 0
+        recipe.yieldGramWeight = Double(yieldGramWeight) ?? 0
+    }
+
+    private func prefillYieldFromIngredients() {
+        guard yieldAmount.isEmpty, yieldGramWeight.isEmpty else { return }
+        let grams = recipe?.ingredientTotalGrams() ?? 0
+        guard grams > 0 else { return }
+        yieldIsPerServing = false
+        yieldUnit = .grams
+        yieldAmount = String(format: "%g", grams.rounded())
+    }
+
     private func save() {
         if let recipe {
             recipe.name = name
             recipe.servings = servings
+            applyYieldDraft(to: recipe)
         } else {
-            context.insert(Recipe(name: name, servings: servings))
+            let created = Recipe(name: name, servings: servings)
+            applyYieldDraft(to: created)
+            context.insert(created)
         }
         try? context.save()
         dismiss()
+    }
+}
+
+private struct RecipeYieldFields: View {
+    @Binding var usesCustomYield: Bool
+    @Binding var yieldIsPerServing: Bool
+    @Binding var yieldAmount: String
+    @Binding var yieldUnit: ServingUnitType
+    @Binding var yieldGramWeight: String
+    var onEnable: () -> Void
+
+    private var usesVolumeUnit: Bool {
+        switch yieldUnit {
+        case .teaspoon, .tablespoon, .cup: return true
+        default: return false
+        }
+    }
+
+    var body: some View {
+        Section {
+            Toggle("Custom portion", isOn: $usesCustomYield)
+                .onChange(of: usesCustomYield) { _, enabled in
+                    if enabled { onEnable() }
+                }
+            if usesCustomYield {
+                Picker("Applies to", selection: $yieldIsPerServing) {
+                    Text("Total").tag(false)
+                    Text("Per serving").tag(true)
+                }
+                .pickerStyle(.segmented)
+                HStack(alignment: .top, spacing: 12) {
+                    OptionalNumericStepperField(
+                        title: "Amount",
+                        text: $yieldAmount,
+                        step: usesVolumeUnit ? 0.25 : 1
+                    )
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Unit")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                        Picker("Unit", selection: $yieldUnit) {
+                            ForEach(ServingUnitType.customFoodServingUnits, id: \.self) { unit in
+                                Text(unit.displayName).tag(unit)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+                    }
+                }
+                if usesVolumeUnit || yieldAmount.isEmpty {
+                    OptionalNumericStepperField(
+                        title: "Weight in grams",
+                        text: $yieldGramWeight,
+                        suffix: "g",
+                        step: 5
+                    )
+                }
+            }
+        } header: {
+            Text("Portion")
+        }
     }
 }
 
@@ -332,6 +485,7 @@ struct RecipeIngredientAddView: View {
     @State private var query = ""
     @State private var isPreparingFood = false
     @State private var quantityPresentation: FoodQuantityPresentation?
+    @State private var draftIsAdjustableAtLog = false
     @State private var showScanner = false
     @State private var showLabelScan = false
     @State private var showCustomFood = false
@@ -363,8 +517,16 @@ struct RecipeIngredientAddView: View {
                 }
             }
             .sheet(item: $quantityPresentation) { presentation in
-                FoodQuantitySheet(food: presentation.food) { quantity, unit in
-                    addIngredient(food: presentation.food, quantity: quantity, unit: unit)
+                FoodQuantitySheet(
+                    food: presentation.food,
+                    isAdjustableAtLog: $draftIsAdjustableAtLog
+                ) { quantity, unit in
+                    addIngredient(
+                        food: presentation.food,
+                        quantity: quantity,
+                        unit: unit,
+                        isAdjustableAtLog: draftIsAdjustableAtLog
+                    )
                     dismiss()
                 }
             }
@@ -411,13 +573,24 @@ struct RecipeIngredientAddView: View {
             isPreparingFood = true
             let prepared = await FoodService.prepareForLogging(food, context: context)
             isPreparingFood = false
+            draftIsAdjustableAtLog = false
             quantityPresentation = FoodQuantityPresentation(food: prepared)
         }
     }
 
-    private func addIngredient(food: Food, quantity: Double, unit: ServingUnitType) {
+    private func addIngredient(
+        food: Food,
+        quantity: Double,
+        unit: ServingUnitType,
+        isAdjustableAtLog: Bool = false
+    ) {
         let cached = food.source == .custom ? food : FoodService.cacheFood(food, context: context)
-        let ingredient = RecipeIngredient(food: cached, quantity: quantity, servingUnit: unit)
+        let ingredient = RecipeIngredient(
+            food: cached,
+            quantity: quantity,
+            servingUnit: unit,
+            isAdjustableAtLog: isAdjustableAtLog
+        )
         ingredient.recipe = recipe
         recipe.ingredients.append(ingredient)
         context.insert(ingredient)
@@ -732,11 +905,18 @@ private enum RecipeImportDebug {
     }
 }
 
+enum RecipeImportReviewMode {
+    case recipe
+    case mealEstimate
+}
+
 struct RecipeImportReviewView: View {
     @Environment(\.modelContext) private var context
+    @Environment(\.dismiss) private var dismiss
     @State var parsed: ParsedWebRecipe
     let selectedDate: Date
     let defaultMeal: MealCategory
+    let mode: RecipeImportReviewMode
     /// `true` when the recipe was also logged to the diary.
     let onFinished: (Bool) -> Void
 
@@ -749,10 +929,12 @@ struct RecipeImportReviewView: View {
         parsed: ParsedWebRecipe,
         selectedDate: Date,
         defaultMeal: MealCategory,
+        mode: RecipeImportReviewMode = .recipe,
         onFinished: @escaping (Bool) -> Void
     ) {
         self.selectedDate = selectedDate
         self.defaultMeal = defaultMeal
+        self.mode = mode
         self.onFinished = onFinished
         _parsed = State(initialValue: parsed)
         _servings = State(initialValue: parsed.servings)
@@ -763,13 +945,43 @@ struct RecipeImportReviewView: View {
         !parsed.name.isEmpty && !parsed.ingredients.isEmpty && parsed.ingredients.allSatisfy(\.isResolved)
     }
 
+    private var databaseTotals: MacroTotals {
+        parsed.ingredients.reduce(into: .zero) { partial, item in
+            guard let food = item.food else { return }
+            partial = partial + food.macros(for: item.quantity, unit: item.servingUnit)
+        }
+    }
+
+    private var unresolvedCount: Int {
+        parsed.ingredients.filter { !$0.isResolved }.count
+    }
+
     var body: some View {
         Form {
-            TextField("Recipe Name", text: $parsed.name)
+            TextField(mode == .mealEstimate ? "Meal Name" : "Recipe Name", text: $parsed.name)
+            if mode == .recipe {
+                Section {
+                    NumericStepperField(title: "Recipe servings", value: $servings, range: 0.01...50, step: 0.25, format: "%g")
+                } footer: {
+                    Text("Yield for this batch. Changing it scales every ingredient amount to match.")
+                }
+            }
+
             Section {
-                NumericStepperField(title: "Recipe servings", value: $servings, range: 0.01...50, step: 0.25, format: "%g")
+                LabeledContent("Calories", value: "\(Int(databaseTotals.calories.rounded()))")
+                LabeledContent("Protein", value: String(format: "%.1f g", databaseTotals.protein))
+                LabeledContent("Carbs", value: String(format: "%.1f g", databaseTotals.carbs))
+                LabeledContent("Fat", value: String(format: "%.1f g", databaseTotals.fat))
+            } header: {
+                Text("Database totals")
             } footer: {
-                Text("Yield for this batch. Changing it scales every ingredient amount to match.")
+                if unresolvedCount > 0 {
+                    Text("Unresolved items are not included. Macros come from USDA / Open Food Facts / your custom foods — not the AI.")
+                } else if mode == .mealEstimate {
+                    Text("Macros come from matched USDA / Open Food Facts / custom foods using the amounts below — not from the AI.")
+                } else {
+                    Text("Totals for this batch from matched foods.")
+                }
             }
 
             Section {
@@ -782,10 +994,14 @@ struct RecipeImportReviewView: View {
             } header: {
                 Text("Log")
             } footer: {
-                Text("Used only for Save & Log. Save Only stores the recipe without adding a diary entry.")
+                if mode == .mealEstimate {
+                    Text("Save & Log adds this meal to the diary as a recipe (1 serving = the plate). Save Only stores the recipe without a diary entry.")
+                } else {
+                    Text("Used only for Save & Log. Save Only stores the recipe without adding a diary entry.")
+                }
             }
 
-            Section("Ingredients") {
+            Section {
                 ForEach(Array(parsed.ingredients.indices), id: \.self) { index in
                     let item = parsed.ingredients[index]
                     VStack(alignment: .leading, spacing: 6) {
@@ -807,6 +1023,26 @@ struct RecipeImportReviewView: View {
                                     .foregroundStyle(.secondary)
                             }
                             Spacer()
+                            if let calories = item.matchedCalories {
+                                Text("\(calories) kcal")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            } else {
+                                Text("\(RecipeServingsScaler.formatQuantity(item.quantity)) \(item.servingUnit.displayName)")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        if mode == .mealEstimate {
+                            NumericStepperField(
+                                title: "Amount",
+                                value: $parsed.ingredients[index].quantity,
+                                range: 0.01...10_000,
+                                step: item.servingUnit == .grams || item.servingUnit == .ounces ? 1 : 0.25,
+                                suffix: item.servingUnit.displayName,
+                                format: "%g"
+                            )
+                        } else if item.food != nil {
                             Text("\(RecipeServingsScaler.formatQuantity(item.quantity)) \(item.servingUnit.displayName)")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
@@ -850,6 +1086,14 @@ struct RecipeImportReviewView: View {
                         .font(.subheadline)
                     }
                 }
+            } header: {
+                Text("Ingredients")
+            } footer: {
+                Text(
+                    mode == .mealEstimate
+                        ? "Green check is a confident database match. Orange means Resolve or Custom Food before saving."
+                        : "Resolve or remove uncertain ingredients before saving."
+                )
             }
 
             if !canSave {
@@ -858,9 +1102,14 @@ struct RecipeImportReviewView: View {
                     .foregroundStyle(.orange)
             }
         }
-        .navigationTitle("Review Import")
+        .navigationTitle(mode == .mealEstimate ? "Review Estimate" : "Review Import")
         .keyboardDismissToolbar()
         .toolbar {
+            if mode == .mealEstimate {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
             ToolbarItem(placement: .confirmationAction) {
                 Button("Save & Log") { saveRecipe(logAfterSave: true) }
                     .disabled(!canSave)
@@ -1009,6 +1258,108 @@ struct RecipeIngredientResolvePicker: View {
     }
 }
 
+struct AdjustableIngredientDraft: Identifiable, Hashable {
+    let id: UUID
+    let food: Food
+    let defaultQuantity: Double
+    let defaultUnit: ServingUnitType
+    var quantity: Double
+    var unit: ServingUnitType
+
+    var isModified: Bool {
+        abs(quantity - defaultQuantity) > 0.000_001 || unit != defaultUnit
+    }
+
+    static func == (lhs: Self, rhs: Self) -> Bool { lhs.id == rhs.id }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+    }
+
+    static func drafts(
+        from recipe: Recipe,
+        stored: [UUID: (quantity: Double, unit: ServingUnitType)] = [:]
+    ) -> [AdjustableIngredientDraft] {
+        recipe.adjustableIngredients.compactMap { ingredient in
+            guard let food = ingredient.food else { return nil }
+            let storedAmount = stored[ingredient.id]
+            return AdjustableIngredientDraft(
+                id: ingredient.id,
+                food: food,
+                defaultQuantity: ingredient.quantity,
+                defaultUnit: ingredient.servingUnit,
+                quantity: storedAmount?.quantity ?? ingredient.quantity,
+                unit: storedAmount?.unit ?? ingredient.servingUnit
+            )
+        }
+    }
+}
+
+struct RecipeAdjustableIngredientsSection: View {
+    let recipe: Recipe
+    @Binding var drafts: [AdjustableIngredientDraft]
+
+    private var hasModifiedAdjustable: Bool {
+        drafts.contains(where: \.isModified)
+    }
+
+    var body: some View {
+        if !drafts.isEmpty {
+            Section {
+                ForEach(drafts) { draft in
+                    NavigationLink(value: draft) {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(draft.food.displayName)
+                                Text("Full recipe (\(recipe.servings.formatted()) servings)")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Text("\(RecipeServingsScaler.formatQuantity(draft.quantity)) \(ServingConverter.servingLabel(for: draft.unit, food: draft.food))")
+                                .foregroundStyle(draft.isModified ? Color.accentColor : .secondary)
+                        }
+                    }
+                }
+                if hasModifiedAdjustable {
+                    Button("Reset to Recipe Defaults") {
+                        for index in drafts.indices {
+                            drafts[index].quantity = drafts[index].defaultQuantity
+                            drafts[index].unit = drafts[index].defaultUnit
+                        }
+                    }
+                }
+            } header: {
+                Text("Adjustable ingredients")
+            } footer: {
+                Text("Amounts are for the full recipe. Logged quantity scales from these totals.")
+            }
+        }
+    }
+}
+
+extension View {
+    func adjustableIngredientDestination(
+        drafts: Binding<[AdjustableIngredientDraft]>
+    ) -> some View {
+        navigationDestination(for: AdjustableIngredientDraft.self) { draft in
+            FoodQuantitySheet(
+                food: draft.food,
+                title: "Full Recipe Amount",
+                confirmTitle: "Save",
+                initialQuantity: draft.quantity,
+                initialUnit: draft.unit,
+                embedsNavigation: false
+            ) { quantity, unit in
+                if let index = drafts.wrappedValue.firstIndex(where: { $0.id == draft.id }) {
+                    drafts.wrappedValue[index].quantity = quantity
+                    drafts.wrappedValue[index].unit = unit
+                }
+            }
+        }
+    }
+}
+
 struct LogRecipeView: View {
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
@@ -1016,24 +1367,50 @@ struct LogRecipeView: View {
     let date: Date
     let onDone: () -> Void
 
-    @State private var servings = 1.0
+    @State private var quantity: Double
+    @State private var unit: ServingUnitType
     @State private var meal: MealCategory
+    @State private var adjustableDrafts: [AdjustableIngredientDraft] = []
 
     init(recipe: Recipe, defaultMeal: MealCategory, date: Date, onDone: @escaping () -> Void) {
         self.recipe = recipe
         self.date = date
         self.onDone = onDone
         _meal = State(initialValue: defaultMeal)
+        _unit = State(initialValue: .serving)
+        _quantity = State(initialValue: 1)
+    }
+
+    private var overrides: [UUID: (quantity: Double, unit: ServingUnitType)] {
+        Dictionary(uniqueKeysWithValues: adjustableDrafts.map { draft in
+            (draft.id, (draft.quantity, draft.unit))
+        })
+    }
+
+    private var availableUnits: [ServingUnitType] {
+        recipe.availableServingUnits(overrides: overrides)
+    }
+
+    private var quantityRange: ClosedRange<Double> {
+        ServingConverter.quantityRange(for: unit)
+    }
+
+    private var quantityStep: Double {
+        ServingConverter.quantityStep(for: unit)
+    }
+
+    private var unitBinding: Binding<ServingUnitType> {
+        Binding(
+            get: { unit },
+            set: { newUnit in
+                quantity = recipe.convertedQuantity(quantity, from: unit, to: newUnit, overrides: overrides)
+                unit = newUnit
+            }
+        )
     }
 
     private var totalMacros: MacroTotals {
-        let perServing = recipe.macrosPerServing
-        return MacroTotals(
-            calories: perServing.calories * servings,
-            protein: perServing.protein * servings,
-            carbs: perServing.carbs * servings,
-            fat: perServing.fat * servings
-        )
+        recipe.macros(for: quantity, unit: unit, overrides: overrides)
     }
 
     var body: some View {
@@ -1043,7 +1420,24 @@ struct LogRecipeView: View {
                     Text(m.displayName).tag(m)
                 }
             }
-            NumericStepperField(title: "Servings", value: $servings, range: 0.01...20, step: 0.25, format: "%g")
+            NumericStepperField(
+                title: "Quantity (\(recipe.unitLabel(for: unit, overrides: overrides)))",
+                value: $quantity,
+                range: quantityRange,
+                step: quantityStep,
+                format: unit == .grams ? "%.0f" : "%g"
+            )
+            Picker("Unit", selection: unitBinding) {
+                ForEach(availableUnits, id: \.self) { u in
+                    Text(recipe.unitLabel(for: u, overrides: overrides)).tag(u)
+                }
+            }
+
+            RecipeAdjustableIngredientsSection(
+                recipe: recipe,
+                drafts: $adjustableDrafts
+            )
+
             Section("Macros") {
                 LabeledContent("Calories", value: "\(Int(totalMacros.calories))")
                 LabeledContent("Protein", value: "\(totalMacros.protein.formatted())g")
@@ -1051,15 +1445,34 @@ struct LogRecipeView: View {
                 LabeledContent("Fat", value: "\(totalMacros.fat.formatted())g")
             }
         }
+        .adjustableIngredientDestination(drafts: $adjustableDrafts)
         .navigationTitle("Log Food")
         .keyboardDismissToolbar()
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
                 Button("Log") {
-                    DiaryService.addEntry(recipe: recipe, quantity: servings, meal: meal, date: date, context: context)
+                    DiaryService.addEntry(
+                        recipe: recipe,
+                        quantity: quantity,
+                        unit: unit,
+                        meal: meal,
+                        date: date,
+                        context: context,
+                        adjustableOverrides: overrides
+                    )
                     dismiss()
                     onDone()
                 }
+            }
+        }
+        .onAppear {
+            if adjustableDrafts.isEmpty {
+                adjustableDrafts = AdjustableIngredientDraft.drafts(from: recipe)
+            }
+        }
+        .onChange(of: availableUnits) { _, units in
+            if !units.contains(unit) {
+                unit = units.first ?? .serving
             }
         }
     }

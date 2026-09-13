@@ -419,4 +419,29 @@ enum WorkoutService {
         context.insert(log)
         try? context.save()
     }
+
+    static func deleteSetLogs(_ logs: [WorkoutSetLog], from session: WorkoutSession, context: ModelContext) {
+        guard !logs.isEmpty else { return }
+        let groupKeys = Set(logs.map(exerciseGroupKey(for:)))
+        for log in logs {
+            context.delete(log)
+        }
+        try? context.save()
+        for key in groupKeys {
+            let remaining = session.sortedSetLogs
+                .filter { exerciseGroupKey(for: $0) == key }
+                .sorted { $0.setIndex < $1.setIndex }
+            for (index, log) in remaining.enumerated() {
+                log.setIndex = index
+            }
+        }
+        try? context.save()
+    }
+
+    private static func exerciseGroupKey(for log: WorkoutSetLog) -> String {
+        if let exerciseId = log.exercise?.id {
+            return exerciseId.uuidString
+        }
+        return log.snapshotExerciseName ?? log.id.uuidString
+    }
 }

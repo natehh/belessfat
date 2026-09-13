@@ -15,13 +15,13 @@ struct WorkoutSettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Apple Health") {
+                Section {
                     if healthKit.isAvailable {
-                        LabeledContent("Write Access") {
+                        LabeledContent("HealthKit Write Access") {
                             Text(healthKit.canWrite ? "Authorized" : "Not authorized")
                                 .foregroundStyle(healthKit.canWrite ? .green : .secondary)
                         }
-                        Button("Authorize Workout Sync") {
+                        Button("Authorize HealthKit") {
                             Task { await healthKit.requestWriteAuthorization(context: context) }
                         }
                         if let message = healthKit.lastSyncMessage {
@@ -33,6 +33,10 @@ struct WorkoutSettingsView: View {
                         Text("HealthKit is not available on this device.")
                             .foregroundStyle(.secondary)
                     }
+                } header: {
+                    Text("HealthKit")
+                } footer: {
+                    Text(HealthKitCopy.workoutWriteDescription)
                 }
 
                 Section("Calorie Estimation") {

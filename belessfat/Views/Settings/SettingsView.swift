@@ -7,6 +7,7 @@ struct SettingsView: View {
     @Query(sort: \UserSettings.id) private var settingsQuery: [UserSettings]
     @Query(sort: \WeightGoal.targetDate, order: .reverse) private var weightGoals: [WeightGoal]
     @AppStorage("appearanceMode") private var appearanceMode = "system"
+    @AppStorage(ServingConverter.preferredWeightUnitStorageKey) private var preferredWeightUnit = ServingUnitType.ounces.rawValue
 
     @State private var showWeightGoal = false
     @State private var showTemplates = false
@@ -26,6 +27,7 @@ struct SettingsView: View {
                         settings: settings,
                         activeWeightGoal: activeWeightGoal,
                         appearanceMode: $appearanceMode,
+                        preferredWeightUnit: $preferredWeightUnit,
                         showWeightGoal: $showWeightGoal,
                         showTemplates: $showTemplates,
                         showFavorites: $showFavorites,
@@ -71,6 +73,7 @@ private struct SettingsFormContent: View {
     @Bindable var settings: UserSettings
     let activeWeightGoal: WeightGoal?
     @Binding var appearanceMode: String
+    @Binding var preferredWeightUnit: String
     @Binding var showWeightGoal: Bool
     @Binding var showTemplates: Bool
     @Binding var showFavorites: Bool
@@ -86,6 +89,48 @@ private struct SettingsFormContent: View {
                     Text("Light").tag("light")
                     Text("Dark").tag("dark")
                 }
+            }
+
+            Section {
+                Text(HealthKitCopy.settingsDescription)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                if healthKit.isAvailable {
+                    Button("Authorize HealthKit") {
+                        Task { await healthKit.requestAuthorization(context: context) }
+                    }
+                    Button("Sync Today") {
+                        Task { await healthKit.sync(for: Date(), context: context) }
+                    }
+                    Button("Sync Last 30 Days") {
+                        let end = Date()
+                        let start = Calendar.current.date(byAdding: .day, value: -29, to: end)!
+                        Task { await healthKit.sync(from: start, to: end, context: context) }
+                    }
+                    if let message = healthKit.lastSyncMessage {
+                        Text(message)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                } else {
+                    Text("HealthKit is not available on this device.")
+                        .foregroundStyle(.secondary)
+                }
+            } header: {
+                Text("HealthKit")
+            } footer: {
+                Text("You can change HealthKit access in the Health app. This app does not use CareKit.")
+            }
+
+            Section {
+                Picker("Weight", selection: $preferredWeightUnit) {
+                    Text("Ounces").tag(ServingUnitType.ounces.rawValue)
+                    Text("Grams").tag(ServingUnitType.grams.rawValue)
+                }
+            } header: {
+                Text("Units")
+            } footer: {
+                Text("Used for AI photo estimates. Logging units are unchanged.")
             }
 
             Section("Macro Targets") {
@@ -131,7 +176,7 @@ private struct SettingsFormContent: View {
                 .onChange(of: settings.weekStartDayRaw) { _, _ in save() }
             }
 
-            Section("Steps") {
+            Section {
                 NumericStepperField(
                     title: "Daily Step Target",
                     value: Binding(
@@ -146,6 +191,10 @@ private struct SettingsFormContent: View {
                     suffix: "steps",
                     format: "%.0f"
                 )
+            } header: {
+                Text("Steps")
+            } footer: {
+                Text("Step counts shown in the diary are imported from HealthKit.")
             }
 
             Section("Weight Goal") {
@@ -191,30 +240,6 @@ private struct SettingsFormContent: View {
                     Text("Used for AI body-fat estimates.")
                 } else {
                     Text("Used for AI body-fat estimates. Set height, sex, and birth year before estimating.")
-                }
-            }
-
-            Section("HealthKit") {
-                if healthKit.isAvailable {
-                    Button("Authorize HealthKit") {
-                        Task { await healthKit.requestAuthorization(context: context) }
-                    }
-                    Button("Sync Today") {
-                        Task { await healthKit.sync(for: Date(), context: context) }
-                    }
-                    Button("Sync Last 30 Days") {
-                        let end = Date()
-                        let start = Calendar.current.date(byAdding: .day, value: -29, to: end)!
-                        Task { await healthKit.sync(from: start, to: end, context: context) }
-                    }
-                    if let message = healthKit.lastSyncMessage {
-                        Text(message)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                } else {
-                    Text("HealthKit not available on this device.")
-                        .foregroundStyle(.secondary)
                 }
             }
 

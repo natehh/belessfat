@@ -312,3 +312,12 @@ final class HealthKitService: ObservableObject {
         try? context.save()
     }
 }
+
+enum HealthKitCopy {
+    static let settingsDescription =
+        "This app uses HealthKit to read step count and active energy, and can optionally write workouts and estimated steps."
+    static let workoutWriteDescription =
+        "Optional. Writes workout calories and estimated steps to HealthKit (Apple Health)."
+    static let diaryStepsFooter =
+        "Step count is read from HealthKit."
+}

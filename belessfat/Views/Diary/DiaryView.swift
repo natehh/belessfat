@@ -196,6 +196,8 @@ struct DiaryView: View {
                         }
                     }
                     .buttonStyle(.plain)
+                } footer: {
+                    Text(HealthKitCopy.diaryStepsFooter)
                 }
 
                 ForEach(MealCategory.allCases) { meal in

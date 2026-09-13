@@ -188,28 +188,8 @@ struct ReportsDashboardView: View {
         recomputeTDEE()
     }
 
-    /// Advances the TDEE EMA at most once per calendar day and persists it here,
-    /// outside of `body`, so the save can't retrigger a render loop.
     private func recomputeTDEE() {
-        let settings = GoalService.settings(context: context)
-        let today = DateHelpers.startOfDay(Date())
-        let updatedToday = settings.smoothedTDEEDate.map { DateHelpers.isSameDay($0, today) } ?? false
-
-        guard let estimate = TDEECalculator.estimate(
-            context: context,
-            previousSmoothedTDEE: settings.smoothedTDEE,
-            applyBlend: !updatedToday
-        ) else {
-            tdee = nil
-            return
-        }
-
-        tdee = estimate
-        if !updatedToday {
-            settings.smoothedTDEE = estimate.estimatedTDEE
-            settings.smoothedTDEEDate = today
-            try? context.save()
-        }
+        tdee = TDEECalculator.estimate(context: context)
     }
 
     private var timeframePicker: some View {
@@ -577,10 +557,10 @@ struct ReportsDashboardView: View {
 
             DisclosureGroup(isExpanded: $tdeeMethodologyExpanded) {
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("Uses the last \(tdee.lookbackDays) days of data (\(tdee.dayCount) days with food logged, \(tdee.weightEntryCount) weight logs).")
-                    Text("Intake is a 7-day rolling average of your daily calories. Weight trend comes from linear regression on 7-day smoothed weights, not day-to-day scale noise.")
-                    Text("Maintenance (TDEE) = smoothed intake − (weight trend × 3,500 kcal/lb). The displayed value updates gradually so one odd weigh-in doesn't swing it.")
-                    Text("Example: eating 2,000 kcal/day while losing 1 lb/week implies burning about 2,500 kcal/day.")
+                    Text("Uses the last \(tdee.lookbackDays) days (\(tdee.dayCount) days with food logged, \(tdee.weightEntryCount) weight logs).")
+                    Text("Intake is the average of days with food logged (empty days are skipped, not counted as zero). Weight trend is a linear fit on 7-day smoothed weights, so a one-off weigh-in does not jump the number.")
+                    Text("TDEE = average intake − (weight trend × 3,500 kcal/lb). As the 28-day window rolls forward, real changes show up over days rather than weeks.")
+                    Text("Example: eating 2,000 kcal/day while losing 1 lb/week implies about 2,500 kcal/day maintenance.")
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)

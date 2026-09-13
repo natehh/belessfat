@@ -555,6 +555,9 @@ struct FoodQuantitySheet: View {
     let confirmTitle: String
     let initialQuantity: Double?
     let initialUnit: ServingUnitType?
+    /// When non-nil, shows “Adjustable when logging” for recipe ingredients.
+    var isAdjustableAtLog: Binding<Bool>? = nil
+    var embedsNavigation: Bool = true
     let onConfirm: (Double, ServingUnitType) -> Void
 
     @State private var quantity: Double
@@ -566,6 +569,8 @@ struct FoodQuantitySheet: View {
         confirmTitle: String = "Add",
         initialQuantity: Double? = nil,
         initialUnit: ServingUnitType? = nil,
+        isAdjustableAtLog: Binding<Bool>? = nil,
+        embedsNavigation: Bool = true,
         onConfirm: @escaping (Double, ServingUnitType) -> Void
     ) {
         self.food = food
@@ -573,6 +578,8 @@ struct FoodQuantitySheet: View {
         self.confirmTitle = confirmTitle
         self.initialQuantity = initialQuantity
         self.initialUnit = initialUnit
+        self.isAdjustableAtLog = isAdjustableAtLog
+        self.embedsNavigation = embedsNavigation
         self.onConfirm = onConfirm
 
         let available = food.availableServingUnits
@@ -602,38 +609,51 @@ struct FoodQuantitySheet: View {
     }
 
     var body: some View {
-        NavigationStack {
-            Form {
-                Text(food.displayName).font(.headline)
-                NumericStepperField(
-                    title: "Quantity (\(ServingConverter.servingLabel(for: unit, food: food)))",
-                    value: $quantity,
-                    range: quantityRange,
-                    step: quantityStep,
-                    format: unit == .grams ? "%.0f" : "%g"
-                )
-                Picker("Unit", selection: unitBinding) {
-                    ForEach(food.availableServingUnits, id: \.self) { u in
-                        Text(ServingConverter.servingLabel(for: u, food: food)).tag(u)
-                    }
-                }
-                let macros = food.macros(for: quantity, unit: unit)
-                Section("Macros") {
-                    LabeledContent("Calories", value: "\(Int(macros.calories))")
-                    LabeledContent("Protein", value: "\(macros.protein.formatted())g")
-                    LabeledContent("Carbs", value: "\(macros.carbs.formatted())g")
-                    LabeledContent("Fat", value: "\(macros.fat.formatted())g")
+        if embedsNavigation {
+            NavigationStack { form }
+        } else {
+            form
+        }
+    }
+
+    private var form: some View {
+        Form {
+            Text(food.displayName).font(.headline)
+            NumericStepperField(
+                title: "Quantity (\(ServingConverter.servingLabel(for: unit, food: food)))",
+                value: $quantity,
+                range: quantityRange,
+                step: quantityStep,
+                format: unit == .grams ? "%.0f" : "%g"
+            )
+            Picker("Unit", selection: unitBinding) {
+                ForEach(food.availableServingUnits, id: \.self) { u in
+                    Text(ServingConverter.servingLabel(for: u, food: food)).tag(u)
                 }
             }
-            .navigationTitle(title)
-            .keyboardDismissToolbar()
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button(confirmTitle) {
-                        onConfirm(quantity, unit)
-                        dismiss()
-                    }
+            if let isAdjustableAtLog {
+                Section {
+                    Toggle("Adjustable when logging", isOn: isAdjustableAtLog)
+                } footer: {
+                    Text("You’ll be able to enter the exact full-recipe amount of this ingredient each time you log the recipe.")
+                }
+            }
+            let macros = food.macros(for: quantity, unit: unit)
+            Section("Macros") {
+                LabeledContent("Calories", value: "\(Int(macros.calories))")
+                LabeledContent("Protein", value: "\(macros.protein.formatted())g")
+                LabeledContent("Carbs", value: "\(macros.carbs.formatted())g")
+                LabeledContent("Fat", value: "\(macros.fat.formatted())g")
+            }
+        }
+        .navigationTitle(title)
+        .keyboardDismissToolbar()
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+            ToolbarItem(placement: .confirmationAction) {
+                Button(confirmTitle) {
+                    onConfirm(quantity, unit)
+                    dismiss()
                 }
             }
         }
@@ -647,6 +667,7 @@ struct EditLogEntryView: View {
     @State private var quantity: Double
     @State private var unit: ServingUnitType
     @State private var meal: MealCategory
+    @State private var adjustableDrafts: [AdjustableIngredientDraft] = []
 
     init(entry: LogEntry) {
         self.entry = entry
@@ -655,12 +676,60 @@ struct EditLogEntryView: View {
         _meal = State(initialValue: entry.mealCategory)
     }
 
+    private var recipe: Recipe? { entry.recipe }
+
+    private var overrides: [UUID: (quantity: Double, unit: ServingUnitType)] {
+        Dictionary(uniqueKeysWithValues: adjustableDrafts.map { draft in
+            (draft.id, (draft.quantity, draft.unit))
+        })
+    }
+
+    private var availableUnits: [ServingUnitType] {
+        if let food = entry.food {
+            return food.availableServingUnits
+        }
+        if let recipe {
+            return recipe.availableServingUnits(overrides: overrides)
+        }
+        return [entry.servingUnit]
+    }
+
     private var quantityRange: ClosedRange<Double> {
         ServingConverter.quantityRange(for: unit)
     }
 
     private var quantityStep: Double {
         ServingConverter.quantityStep(for: unit)
+    }
+
+    private var unitBinding: Binding<ServingUnitType> {
+        Binding(
+            get: { unit },
+            set: { newUnit in
+                if let recipe {
+                    quantity = recipe.convertedQuantity(quantity, from: unit, to: newUnit, overrides: overrides)
+                } else {
+                    let range = ServingConverter.quantityRange(for: newUnit)
+                    quantity = min(max(quantity, range.lowerBound), range.upperBound)
+                }
+                unit = newUnit
+            }
+        )
+    }
+
+    private var liveMacros: MacroTotals {
+        if let recipe {
+            return recipe.macros(for: quantity, unit: unit, overrides: overrides)
+        }
+        if let food = entry.food {
+            return food.macros(for: quantity, unit: unit)
+        }
+        return MacroTotals(
+            calories: entry.snapshotCaloriesPerQuantity * quantity,
+            protein: entry.snapshotProteinPerQuantity * quantity,
+            carbs: entry.snapshotCarbsPerQuantity * quantity,
+            fat: entry.snapshotFatPerQuantity * quantity
+        )
     }
 
     var body: some View {
@@ -673,42 +742,99 @@ struct EditLogEntryView: View {
                     }
                 }
                 NumericStepperField(
-                    title: "Quantity",
+                    title: quantityTitle,
                     value: $quantity,
                     range: quantityRange,
                     step: quantityStep,
                     format: unit == .grams ? "%.0f" : "%g"
                 )
-                if entry.hasSnapshot {
+                if entry.isOrphanedSnapshot {
                     Text("This item was deleted; only meal and quantity can be edited.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-                if let food = entry.food {
-                    Picker("Unit", selection: $unit) {
-                        ForEach(food.availableServingUnits, id: \.self) { u in
-                            Text(ServingConverter.servingLabel(for: u, food: food)).tag(u)
+                if entry.food != nil || recipe != nil {
+                    Picker("Unit", selection: unitBinding) {
+                        ForEach(availableUnits, id: \.self) { u in
+                            Text(unitLabel(for: u)).tag(u)
                         }
                     }
                 }
+                if let recipe {
+                    RecipeAdjustableIngredientsSection(
+                        recipe: recipe,
+                        drafts: $adjustableDrafts
+                    )
+                }
+                Section("Macros") {
+                    LabeledContent("Calories", value: "\(Int(liveMacros.calories))")
+                    LabeledContent("Protein", value: "\(liveMacros.protein.formatted())g")
+                    LabeledContent("Carbs", value: "\(liveMacros.carbs.formatted())g")
+                    LabeledContent("Fat", value: "\(liveMacros.fat.formatted())g")
+                }
             }
-            .onChange(of: unit) { _, _ in
-                quantity = min(max(quantity, quantityRange.lowerBound), quantityRange.upperBound)
+            .adjustableIngredientDestination(drafts: $adjustableDrafts)
+            .onChange(of: availableUnits) { _, units in
+                if !units.contains(unit) {
+                    unit = units.first ?? .serving
+                }
             }
             .navigationTitle("Edit Entry")
             .keyboardDismissToolbar()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") {
-                        entry.quantity = quantity
-                        entry.servingUnit = unit
-                        entry.mealCategory = meal
-                        try? context.save()
-                        dismiss()
-                    }
+                    Button("Save") { save() }
+                }
+            }
+            .onAppear {
+                if let recipe, adjustableDrafts.isEmpty {
+                    adjustableDrafts = AdjustableIngredientDraft.drafts(
+                        from: recipe,
+                        stored: entry.recipeOverrideMap
+                    )
                 }
             }
         }
+    }
+
+    private var quantityTitle: String {
+        if let recipe {
+            return "Quantity (\(recipe.unitLabel(for: unit, overrides: overrides)))"
+        }
+        if let food = entry.food {
+            return "Quantity (\(ServingConverter.servingLabel(for: unit, food: food)))"
+        }
+        return "Quantity"
+    }
+
+    private func unitLabel(for unit: ServingUnitType) -> String {
+        if let recipe {
+            return recipe.unitLabel(for: unit, overrides: overrides)
+        }
+        if let food = entry.food {
+            return ServingConverter.servingLabel(for: unit, food: food)
+        }
+        return unit.displayName
+    }
+
+    private func save() {
+        if let recipe {
+            DiaryService.updateRecipeEntry(
+                entry,
+                recipe: recipe,
+                quantity: quantity,
+                unit: unit,
+                meal: meal,
+                adjustableOverrides: overrides,
+                context: context
+            )
+        } else {
+            entry.quantity = quantity
+            entry.servingUnit = unit
+            entry.mealCategory = meal
+            try? context.save()
+        }
+        dismiss()
     }
 }

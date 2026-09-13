@@ -5,10 +5,8 @@ import SwiftData
 enum TDEECalculator {
     /// 3500 kcal ≈ 1 lb body weight
     static let kcalPerPound = 3500.0
-    static let lookbackDays = 21
+    static let lookbackDays = 28
     static let weightSmoothingWindow = 7
-    static let intakeSmoothingWindow = 7
-    static let displaySmoothingFactor = 0.15
 
     struct Estimate {
         var averageDailyCalories: Double
@@ -53,65 +51,36 @@ enum TDEECalculator {
         }
     }
 
-    /// Pure calculation — never writes to the context. The caller owns persistence
-    /// of `smoothedTDEE` so this can be called safely outside of a view `body`.
-    /// - Parameters:
-    ///   - previousSmoothedTDEE: last persisted displayed value, or nil if none yet.
-    ///   - applyBlend: when true, advances the EMA one step; when false, reuses the
-    ///     previous value as-is (used when the estimate was already advanced today).
-    static func estimate(context: ModelContext, previousSmoothedTDEE: Double?, applyBlend: Bool) -> Estimate? {
+    /// Pure calculation from the current 28-day window — never writes to the context.
+    static func estimate(context: ModelContext) -> Estimate? {
         let end = DateHelpers.startOfDay(Date())
         guard let start = Calendar.current.date(byAdding: .day, value: -(lookbackDays - 1), to: end) else { return nil }
 
         let days = DateHelpers.daysBetween(start, end)
         guard days.count >= weightSmoothingWindow else { return nil }
 
-        guard let averageDailyCalories = smoothedAverageIntake(days: days, context: context) else { return nil }
+        let loggedCalories = days.map { DiaryService.totals(for: $0, context: context).calories }.filter { $0 > 0 }
+        guard loggedCalories.count >= 3 else { return nil }
+        let averageDailyCalories = loggedCalories.reduce(0, +) / Double(loggedCalories.count)
 
         let weights = GoalService.weightEntries(from: start, to: end, context: context)
         guard weights.count >= 2,
               let dailyWeightChange = regressionDailyWeightChange(days: days, entries: weights) else { return nil }
 
         let dailyCalorieBalance = dailyWeightChange * kcalPerPound
-        let rawTDEE = max(averageDailyCalories - dailyCalorieBalance, 800)
+        let estimatedTDEE = max(averageDailyCalories - dailyCalorieBalance, 800)
 
-        let displayTDEE: Double
-        if let previous = previousSmoothedTDEE {
-            displayTDEE = applyBlend
-                ? previous * (1 - displaySmoothingFactor) + rawTDEE * displaySmoothingFactor
-                : previous
-        } else {
-            displayTDEE = rawTDEE
-        }
-
-        let daysWithFood = days.filter { DiaryService.totals(for: $0, context: context).calories > 0 }.count
-        let isProvisional = daysWithFood < 7 || weights.count < 5
+        let isProvisional = loggedCalories.count < 7 || weights.count < 5
 
         return Estimate(
             averageDailyCalories: averageDailyCalories,
             dailyWeightChangeLbs: dailyWeightChange,
-            estimatedTDEE: displayTDEE,
-            dayCount: daysWithFood,
+            estimatedTDEE: estimatedTDEE,
+            dayCount: loggedCalories.count,
             weightEntryCount: weights.count,
             lookbackDays: lookbackDays,
             isProvisional: isProvisional
         )
-    }
-
-    /// 7-day trailing average of intake, averaged across the lookback window.
-    private static func smoothedAverageIntake(days: [Date], context: ModelContext) -> Double? {
-        let calories = days.map { DiaryService.totals(for: $0, context: context).calories }
-        guard calories.count >= intakeSmoothingWindow else { return nil }
-
-        var trailingAverages: [Double] = []
-        for index in (intakeSmoothingWindow - 1)..<calories.count {
-            let slice = Array(calories[(index - intakeSmoothingWindow + 1)...index])
-            let logged = slice.filter { $0 > 0 }
-            guard logged.count >= 3 else { continue }
-            trailingAverages.append(logged.reduce(0, +) / Double(logged.count))
-        }
-        guard !trailingAverages.isEmpty else { return nil }
-        return trailingAverages.reduce(0, +) / Double(trailingAverages.count)
     }
 
     /// Linear regression slope (lbs/day) on 7-day smoothed, forward-filled daily weights.

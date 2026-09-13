@@ -29,7 +29,7 @@ actor CursorFoodEstimateClient {
         apiKey: String,
         prompt: String = AIFoodEstimateService.prompt(),
         onStatus: @escaping @Sendable (String) -> Void
-    ) async throws -> AIFoodEstimateResult {
+    ) async throws -> AIRecipeImportDraft {
         let trimmedKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedKey.isEmpty else { throw ClientError.missingAPIKey }
 
@@ -104,8 +104,8 @@ actor CursorFoodEstimateClient {
 
     private var standingBootstrapPrompt: String {
         """
-        You are a standing food nutrition estimator for the belessfat app.
-        Keep this role for the conversation. When the user sends a photo and estimate instructions, decompose the meal into ingredients privately (including typical invisible prep like oil or sauce when appropriate), estimate amounts and nutrition per ingredient, sum them, then reply with ONLY the requested JSON object — no markdown fences, no commentary, no step-by-step writeup. Do not search the web or use tools unless required to read the image.
+        You are a standing food identifier for the belessfat app.
+        Keep this role for the conversation. When the user sends a photo and estimate instructions: identify only foods and ingredients that are visible (or named by the user); do not add invisible cooking oil, butter, dressings, sauces, marinades, or other prep unless they are clearly visible or explicitly mentioned; estimate a realistic amount for each item from visual cues, preferring the weight unit requested in the run prompt (ounces or grams); if an amount is uncertain, use the midpoint of a plausible range, not the high end; do not invent calories, macros, or database ids — the app looks those up. Reply with ONLY the requested JSON object — no markdown fences, no commentary, no step-by-step writeup. Do not search the web or use tools unless required to read the image.
         """
     }
 

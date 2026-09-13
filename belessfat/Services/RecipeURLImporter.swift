@@ -12,6 +12,11 @@ struct RecipeImportIngredient: Identifiable {
     var isUncertain: Bool
 
     var isResolved: Bool { food != nil && !isUncertain }
+
+    var matchedCalories: Int? {
+        guard let food else { return nil }
+        return Int(food.macros(for: quantity, unit: servingUnit).calories.rounded())
+    }
 }
 
 struct ParsedWebRecipe {

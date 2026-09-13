@@ -38,7 +38,7 @@ enum AIAssistant {
         from image: UIImage,
         foodNameHint: String? = nil,
         onStatus: @escaping @Sendable (String) -> Void
-    ) async throws -> AIFoodEstimateResult {
+    ) async throws -> AIRecipeImportDraft {
         let provider = AIProviderStore.selected
         guard let apiKey = AIProviderStore.apiKey(for: provider), !apiKey.isEmpty else {
             throw AssistantError.missingAPIKey

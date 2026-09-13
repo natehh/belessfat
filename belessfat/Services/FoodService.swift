@@ -335,13 +335,15 @@ enum FoodService {
 
     static func duplicateRecipe(_ source: Recipe, newName: String, context: ModelContext) -> Recipe {
         let copy = Recipe(name: newName, servings: source.servings)
+        copy.copyYield(from: source)
         context.insert(copy)
         for ingredient in source.ingredients {
             guard let food = ingredient.food else { continue }
             let item = RecipeIngredient(
                 food: food,
                 quantity: ingredient.quantity,
-                servingUnit: ingredient.servingUnit
+                servingUnit: ingredient.servingUnit,
+                isAdjustableAtLog: ingredient.isAdjustableAtLog
             )
             item.recipe = copy
             copy.ingredients.append(item)
@@ -380,10 +382,21 @@ enum FoodService {
             return [(food, entry.quantity, entry.servingUnit)]
         }
         if let recipe = entry.recipe {
-            let scale = entry.quantity / max(recipe.servings, 0.01)
+            let overrides = entry.recipeOverrideMap
+            let fraction: Double
+            if entry.servingUnit == .serving {
+                fraction = entry.quantity / max(recipe.servings, 0.01)
+            } else {
+                let loggedGrams = recipe.grams(for: entry.quantity, unit: entry.servingUnit, overrides: overrides)
+                let batch = recipe.batchGrams(overrides: overrides)
+                fraction = batch > 0 ? loggedGrams / batch : 0
+            }
             return recipe.ingredients.compactMap { ingredient in
                 guard let food = ingredient.food else { return nil }
-                return (food, ingredient.quantity * scale, ingredient.servingUnit)
+                if let override = overrides[ingredient.id] {
+                    return (food, override.quantity * fraction, override.unit)
+                }
+                return (food, ingredient.quantity * fraction, ingredient.servingUnit)
             }
         }
         if let food = foodFromSnapshotEntry(entry, context: context) {

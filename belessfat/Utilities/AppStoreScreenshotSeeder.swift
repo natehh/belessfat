@@ -156,9 +156,6 @@ enum AppStoreScreenshotSeeder {
 
         context.insert(WeightEntry(date: today, weightLbs: 194.2))
         context.insert(DailyHealthSnapshot(date: today, steps: 8420, activeCalories: 520))
-        // Seed a realistic smoothed TDEE so the card doesn’t start from a bad EMA.
-        settings.smoothedTDEE = 2480
-        settings.smoothedTDEEDate = cal.date(byAdding: .day, value: -1, to: today)
 
         if let target = cal.date(byAdding: .day, value: 90, to: today) {
             context.insert(WeightGoal(

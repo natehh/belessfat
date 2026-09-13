@@ -8,10 +8,33 @@ struct ExerciseSearchView: View {
     let onSelect: (Exercise) -> Void
 
     @State private var query = ""
-    @State private var results: [WgerClient.SearchResult] = []
+    @State private var results: [SearchItem] = []
     @State private var isSearching = false
     @State private var errorMessage: String?
     @State private var searchTask: Task<Void, Never>?
+
+    private enum SearchItem: Identifiable {
+        case local(Exercise)
+        case remote(WgerClient.SearchResult)
+
+        var id: String {
+            switch self {
+            case .local(let exercise):
+                return "local-\(exercise.id.uuidString)"
+            case .remote(let result):
+                return "wger-\(result.id)"
+            }
+        }
+
+        var name: String {
+            switch self {
+            case .local(let exercise):
+                return exercise.name
+            case .remote(let result):
+                return result.name
+            }
+        }
+    }
 
     var body: some View {
         NavigationStack {
@@ -65,9 +88,7 @@ struct ExerciseSearchView: View {
         let needle = text.lowercased()
         let localMatches = WorkoutService.allExercises(context: context)
             .filter { $0.name.lowercased().contains(needle) }
-            .map { exercise in
-                WgerClient.SearchResult(id: exercise.wgerId ?? exercise.id.hashValue, name: exercise.name)
-            }
+            .map { SearchItem.local($0) }
 
         isSearching = true
         errorMessage = nil
@@ -78,7 +99,7 @@ struct ExerciseSearchView: View {
             var merged = localMatches
             for result in remote where !seen.contains(result.name) {
                 seen.insert(result.name)
-                merged.append(result)
+                merged.append(.remote(result))
             }
             results = merged
         } catch {
@@ -87,14 +108,20 @@ struct ExerciseSearchView: View {
         }
     }
 
-    private func selectResult(_ result: WgerClient.SearchResult) {
-        Task {
-            do {
-                let exercise = try await WorkoutService.cacheExercise(from: result, context: context)
-                onSelect(exercise)
-                dismiss()
-            } catch {
-                errorMessage = error.localizedDescription
+    private func selectResult(_ item: SearchItem) {
+        switch item {
+        case .local(let exercise):
+            onSelect(exercise)
+            dismiss()
+        case .remote(let result):
+            Task {
+                do {
+                    let exercise = try await WorkoutService.cacheExercise(from: result, context: context)
+                    onSelect(exercise)
+                    dismiss()
+                } catch {
+                    errorMessage = error.localizedDescription
+                }
             }
         }
     }

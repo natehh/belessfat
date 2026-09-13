@@ -25,9 +25,9 @@
 	<key>NSCameraUsageDescription</key>
 	<string>belessfat needs camera access to scan barcodes and nutrition labels.</string>
 	<key>NSHealthShareUsageDescription</key>
-	<string>belessfat reads your steps and active calories from Apple Health.</string>
+	<string>belessfat uses HealthKit to read your steps and active calories from Apple Health.</string>
 	<key>NSHealthUpdateUsageDescription</key>
-	<string>belessfat optionally writes workout calories and estimated steps to Apple Health.</string>
+	<string>belessfat uses HealthKit to optionally write workout calories and estimated steps to Apple Health.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>belessfat needs photo access to read nutrition labels from images.</string>
 	<key>UIApplicationSceneManifest</key>
