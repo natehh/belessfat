@@ -872,7 +872,7 @@ struct RecipeURLImportView: View {
 }
 
 private struct RecipeImportLineRequest {
-    let index: Int
+    let ingredientId: UUID
     let suggestedQuery: String
 }
 
@@ -883,18 +883,18 @@ private enum RecipeImportIngredientSheet: Identifiable {
     var id: String {
         switch self {
         case .resolve(let request):
-            return "resolve-\(request.index)"
+            return "resolve-\(request.ingredientId.uuidString)"
         case .customFood(let request):
-            return "custom-\(request.index)"
+            return "custom-\(request.ingredientId.uuidString)"
         }
     }
 
     var debugName: String {
         switch self {
         case .resolve(let request):
-            return "resolve(index=\(request.index), query=\(request.suggestedQuery))"
+            return "resolve(id=\(request.ingredientId.uuidString), query=\(request.suggestedQuery))"
         case .customFood(let request):
-            return "customFood(index=\(request.index), query=\(request.suggestedQuery))"
+            return "customFood(id=\(request.ingredientId.uuidString), query=\(request.suggestedQuery))"
         }
     }
 }
@@ -908,6 +908,82 @@ private enum RecipeImportDebug {
 enum RecipeImportReviewMode {
     case recipe
     case mealEstimate
+}
+
+private struct RecipeImportIngredientRow: View {
+    let item: RecipeImportIngredient
+    @Binding var quantity: Double
+    let mode: RecipeImportReviewMode
+    let onResolve: () -> Void
+    let onCustomFood: () -> Void
+    let onRemove: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                if item.isUncertain || item.food == nil {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                } else {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                }
+                Text(item.rawText)
+                    .font(.subheadline)
+            }
+            HStack {
+                if let food = item.food {
+                    Text(food.displayName)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                if let calories = item.matchedCalories {
+                    Text("\(calories) kcal")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("\(RecipeServingsScaler.formatQuantity(item.quantity)) \(item.servingUnit.displayName)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            if mode == .mealEstimate {
+                NumericStepperField(
+                    title: "Amount",
+                    value: $quantity,
+                    range: 0.01...10_000,
+                    step: item.servingUnit == .grams || item.servingUnit == .ounces ? 1 : 0.25,
+                    suffix: item.servingUnit.displayName,
+                    format: "%g"
+                )
+            } else if item.food != nil {
+                Text("\(RecipeServingsScaler.formatQuantity(item.quantity)) \(item.servingUnit.displayName)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            VStack(alignment: .leading, spacing: 8) {
+                Button(action: onResolve) {
+                    Label("Resolve", systemImage: "magnifyingglass")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .buttonStyle(.borderless)
+
+                Button(action: onCustomFood) {
+                    Label("Custom Food", systemImage: "plus.circle")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .buttonStyle(.borderless)
+
+                Button(role: .destructive, action: onRemove) {
+                    Label("Remove", systemImage: "trash")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .buttonStyle(.borderless)
+            }
+            .font(.subheadline)
+        }
+    }
 }
 
 struct RecipeImportReviewView: View {
@@ -1002,89 +1078,33 @@ struct RecipeImportReviewView: View {
             }
 
             Section {
-                ForEach(Array(parsed.ingredients.indices), id: \.self) { index in
-                    let item = parsed.ingredients[index]
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack {
-                            if item.isUncertain || item.food == nil {
-                                Image(systemName: "exclamationmark.triangle.fill")
-                                    .foregroundStyle(.orange)
-                            } else {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .foregroundStyle(.green)
-                            }
-                            Text(item.rawText)
-                                .font(.subheadline)
-                        }
-                        HStack {
-                            if let food = item.food {
-                                Text(food.displayName)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            if let calories = item.matchedCalories {
-                                Text("\(calories) kcal")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            } else {
-                                Text("\(RecipeServingsScaler.formatQuantity(item.quantity)) \(item.servingUnit.displayName)")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                        if mode == .mealEstimate {
-                            NumericStepperField(
-                                title: "Amount",
-                                value: $parsed.ingredients[index].quantity,
-                                range: 0.01...10_000,
-                                step: item.servingUnit == .grams || item.servingUnit == .ounces ? 1 : 0.25,
-                                suffix: item.servingUnit.displayName,
-                                format: "%g"
+                ForEach(parsed.ingredients) { item in
+                    RecipeImportIngredientRow(
+                        item: item,
+                        quantity: quantityBinding(for: item.id),
+                        mode: mode,
+                        onResolve: {
+                            let query = suggestedQuery(for: item)
+                            RecipeImportDebug.log("TAP Resolve id=\(item.id) query=\(query)")
+                            ingredientSheet = .resolve(
+                                RecipeImportLineRequest(ingredientId: item.id, suggestedQuery: query)
                             )
-                        } else if item.food != nil {
-                            Text("\(RecipeServingsScaler.formatQuantity(item.quantity)) \(item.servingUnit.displayName)")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                            RecipeImportDebug.log("SET ingredientSheet → \(ingredientSheet?.debugName ?? "nil")")
+                        },
+                        onCustomFood: {
+                            let query = suggestedQuery(for: item)
+                            RecipeImportDebug.log("TAP Custom Food id=\(item.id) query=\(query)")
+                            ingredientSheet = .customFood(
+                                RecipeImportLineRequest(ingredientId: item.id, suggestedQuery: query)
+                            )
+                            RecipeImportDebug.log("SET ingredientSheet → \(ingredientSheet?.debugName ?? "nil")")
+                        },
+                        onRemove: {
+                            RecipeImportDebug.log("TAP Remove id=\(item.id)")
+                            parsed.ingredients.removeAll { $0.id == item.id }
                         }
-                        VStack(alignment: .leading, spacing: 8) {
-                            Button {
-                                let query = suggestedQuery(for: item)
-                                RecipeImportDebug.log("TAP Resolve index=\(index) query=\(query)")
-                                ingredientSheet = .resolve(
-                                    RecipeImportLineRequest(index: index, suggestedQuery: query)
-                                )
-                                RecipeImportDebug.log("SET ingredientSheet → \(ingredientSheet?.debugName ?? "nil")")
-                            } label: {
-                                Label("Resolve", systemImage: "magnifyingglass")
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                            }
-                            .buttonStyle(.borderless)
-
-                            Button {
-                                let query = suggestedQuery(for: item)
-                                RecipeImportDebug.log("TAP Custom Food index=\(index) query=\(query)")
-                                ingredientSheet = .customFood(
-                                    RecipeImportLineRequest(index: index, suggestedQuery: query)
-                                )
-                                RecipeImportDebug.log("SET ingredientSheet → \(ingredientSheet?.debugName ?? "nil")")
-                            } label: {
-                                Label("Custom Food", systemImage: "plus.circle")
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                            }
-                            .buttonStyle(.borderless)
-
-                            Button(role: .destructive) {
-                                RecipeImportDebug.log("TAP Remove index=\(index)")
-                                parsed.ingredients.remove(at: index)
-                            } label: {
-                                Label("Remove", systemImage: "trash")
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                            }
-                            .buttonStyle(.borderless)
-                        }
-                        .font(.subheadline)
-                    }
+                    )
+                    .id(item.id)
                 }
             } header: {
                 Text("Ingredients")
@@ -1140,45 +1160,55 @@ struct RecipeImportReviewView: View {
             switch sheet {
             case .resolve(let request):
                 RecipeIngredientResolvePicker(initialQuery: request.suggestedQuery) { food in
-                    RecipeImportDebug.log("ResolvePicker SELECT food=\(food.displayName) index=\(request.index)")
-                    applyResolvedFood(food, at: request.index)
+                    RecipeImportDebug.log("ResolvePicker SELECT food=\(food.displayName) id=\(request.ingredientId)")
+                    applyResolvedFood(food, id: request.ingredientId)
                     RecipeImportDebug.log("ResolvePicker clearing sheet after select")
                     ingredientSheet = nil
                 }
                 .onAppear {
-                    RecipeImportDebug.log("ResolvePicker APPEARED index=\(request.index) query=\(request.suggestedQuery)")
+                    RecipeImportDebug.log("ResolvePicker APPEARED id=\(request.ingredientId) query=\(request.suggestedQuery)")
                 }
                 .onDisappear {
-                    RecipeImportDebug.log("ResolvePicker DISAPPEARED index=\(request.index)")
+                    RecipeImportDebug.log("ResolvePicker DISAPPEARED id=\(request.ingredientId)")
                 }
             case .customFood(let request):
                 CustomFoodFormView(
                     barcode: nil,
                     logImmediately: false,
                     onFoodSaved: { food in
-                        RecipeImportDebug.log("CustomFood onFoodSaved food=\(food.displayName) index=\(request.index)")
-                        applyResolvedFood(food, at: request.index)
+                        RecipeImportDebug.log("CustomFood onFoodSaved food=\(food.displayName) id=\(request.ingredientId)")
+                        applyResolvedFood(food, id: request.ingredientId)
                         ingredientSheet = nil
                     },
                     onDone: {
-                        RecipeImportDebug.log("CustomFood onDone index=\(request.index)")
+                        RecipeImportDebug.log("CustomFood onDone id=\(request.ingredientId)")
                         ingredientSheet = nil
                     }
                 )
                 .onAppear {
-                    RecipeImportDebug.log("CustomFood SHEET APPEARED index=\(request.index) — if you tapped Resolve, this is the bug")
+                    RecipeImportDebug.log("CustomFood SHEET APPEARED id=\(request.ingredientId) — if you tapped Resolve, this is the bug")
                 }
                 .onDisappear {
-                    RecipeImportDebug.log("CustomFood SHEET DISAPPEARED index=\(request.index)")
+                    RecipeImportDebug.log("CustomFood SHEET DISAPPEARED id=\(request.ingredientId)")
                 }
             }
         }
     }
 
-    private func applyResolvedFood(_ food: Food, at index: Int) {
-        RecipeImportDebug.log("applyResolvedFood index=\(index) food=\(food.displayName)")
-        guard parsed.ingredients.indices.contains(index) else {
-            RecipeImportDebug.log("applyResolvedFood FAILED — index out of range")
+    private func quantityBinding(for id: UUID) -> Binding<Double> {
+        Binding(
+            get: { parsed.ingredients.first(where: { $0.id == id })?.quantity ?? 0 },
+            set: { newValue in
+                guard let index = parsed.ingredients.firstIndex(where: { $0.id == id }) else { return }
+                parsed.ingredients[index].quantity = newValue
+            }
+        )
+    }
+
+    private func applyResolvedFood(_ food: Food, id: UUID) {
+        RecipeImportDebug.log("applyResolvedFood id=\(id) food=\(food.displayName)")
+        guard let index = parsed.ingredients.firstIndex(where: { $0.id == id }) else {
+            RecipeImportDebug.log("applyResolvedFood FAILED — ingredient no longer in list")
             return
         }
         parsed.ingredients[index].food = food
