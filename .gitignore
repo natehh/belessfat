@@ -7,3 +7,8 @@ build/
 Config.local.xcconfig
 *.mobileprovision
 *.p12
+fastlane/report.xml
+fastlane/Preview.html
+*.ipa
+*.dSYM.zip
+vendor/bundle

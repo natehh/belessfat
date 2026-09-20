@@ -1,0 +1,154 @@
+require "base64"
+
+default_platform(:ios)
+
+# GitHub secrets required on the repo:
+#   APP_STORE_CONNECT_KEY_ID
+#   APP_STORE_CONNECT_ISSUER_ID
+#   APP_STORE_CONNECT_KEY          (base64 of the .p8)
+#   BUILD_CERTIFICATE_BASE64       (base64 of Apple Distribution .p12)
+#   P12_PASSWORD
+#   USDA_API_KEY                   (optional; written into Config.local.xcconfig)
+#
+# What's New comes from the merge commit body (see AGENTS.md).
+
+platform :ios do
+  desc "Archive, upload, and submit the merge on release for App Review"
+  lane :app_store_release do
+    require_env!(
+      "APP_STORE_CONNECT_KEY_ID",
+      "APP_STORE_CONNECT_ISSUER_ID",
+      "APP_STORE_CONNECT_KEY"
+    )
+
+    setup_ci if is_ci
+    install_distribution_certificate if is_ci
+
+    api_key = app_store_connect_api_key(
+      key_id: ENV.fetch("APP_STORE_CONNECT_KEY_ID"),
+      issuer_id: ENV.fetch("APP_STORE_CONNECT_ISSUER_ID"),
+      key_content: ENV.fetch("APP_STORE_CONNECT_KEY"),
+      is_key_content_base64: true,
+      in_house: false
+    )
+
+    abort_if_review_in_progress
+
+    notes = app_store_whats_new
+    version = get_version_number(xcodeproj: "belessfat.xcodeproj", target: "belessfat")
+    build = next_build_number(api_key: api_key)
+    increment_build_number(xcodeproj: "belessfat.xcodeproj", build_number: build)
+
+    UI.message("Submitting #{version} (#{build})")
+    UI.message("What's New:\n#{notes}")
+
+    build_app(
+      project: "belessfat.xcodeproj",
+      scheme: "belessfat",
+      configuration: "Release",
+      export_method: "app-store",
+      export_team_id: "59A48JJMU8",
+      xcargs: "-allowProvisioningUpdates",
+      output_directory: "build",
+      output_name: "belessfat",
+      clean: true
+    )
+
+    upload_to_app_store(
+      api_key: api_key,
+      app_identifier: "com.belessfat.app",
+      app_version: version,
+      build_number: build.to_s,
+      ipa: "build/belessfat.ipa",
+      force: true,
+      skip_screenshots: true,
+      skip_metadata: true,
+      precheck_include_in_app_purchases: false,
+      submit_for_review: false,
+      automatic_release: false
+    )
+
+    write_whats_new(notes)
+
+    upload_to_app_store(
+      api_key: api_key,
+      app_identifier: "com.belessfat.app",
+      app_version: version,
+      build_number: build.to_s,
+      force: true,
+      skip_binary_upload: true,
+      skip_screenshots: true,
+      skip_metadata: true,
+      precheck_include_in_app_purchases: false,
+      submit_for_review: true,
+      automatic_release: false,
+      submission_information: {
+        add_id_info_uses_idfa: false,
+        export_compliance_uses_encryption: false,
+        export_compliance_encryption_updated: false
+      }
+    )
+  end
+
+  def require_env!(*keys)
+    missing = keys.select { |key| ENV[key].to_s.strip.empty? }
+    UI.user_error!("Missing required environment: #{missing.join(', ')}") unless missing.empty?
+  end
+
+  def abort_if_review_in_progress
+    app = Spaceship::ConnectAPI::App.find("com.belessfat.app")
+    UI.user_error!("Could not find com.belessfat.app in App Store Connect") if app.nil?
+    if app.get_in_progress_review_submission(platform: Spaceship::ConnectAPI::Platform::IOS)
+      UI.user_error!("A submission is already in review. Wait for Apple, or reject it in App Store Connect, before merging to release again.")
+    end
+  end
+
+  def next_build_number(api_key:)
+    live = begin
+      app_store_build_number(api_key: api_key, live: true, app_identifier: "com.belessfat.app").to_i
+    rescue StandardError
+      0
+    end
+    testflight = begin
+      latest_testflight_build_number(api_key: api_key, app_identifier: "com.belessfat.app").to_i
+    rescue StandardError
+      0
+    end
+    [live, testflight, get_build_number(xcodeproj: "belessfat.xcodeproj").to_i].max + 1
+  end
+
+  def app_store_whats_new
+    raw = ENV["RELEASE_NOTES"].to_s
+    raw = `git log -1 --pretty=%B`.to_s if raw.strip.empty?
+    lines = raw.lines.map { |line| line.rstrip }
+    lines = lines.drop(1) if lines.first.to_s.match?(/\AMerge (pull request|branch)\b/i)
+    notes = lines.join("\n").strip
+    UI.user_error!("The merge commit has no What's New body. Put App Store release notes in the merge commit message (see AGENTS.md).") if notes.empty?
+    UI.user_error!("What's New is #{notes.length} characters; App Store limit is 4000.") if notes.length > 4000
+    notes
+  end
+
+  def write_whats_new(notes)
+    app = Spaceship::ConnectAPI::App.find("com.belessfat.app")
+    version = app.get_edit_app_store_version(platform: Spaceship::ConnectAPI::Platform::IOS)
+    UI.user_error!("No editable App Store version to attach What's New.") if version.nil?
+    version.get_app_store_version_localizations.each do |localization|
+      next unless localization.locale.to_s.start_with?("en")
+      localization.update(whats_new: notes)
+    end
+  end
+
+  def install_distribution_certificate
+    require_env!("BUILD_CERTIFICATE_BASE64", "P12_PASSWORD")
+    cert_path = File.join(Dir.pwd, "build_certificate.p12")
+    File.binwrite(cert_path, Base64.decode64(ENV.fetch("BUILD_CERTIFICATE_BASE64")))
+    import_certificate(
+      certificate_path: cert_path,
+      certificate_password: ENV.fetch("P12_PASSWORD"),
+      keychain_name: ENV["MATCH_KEYCHAIN_NAME"],
+      keychain_password: ENV["MATCH_KEYCHAIN_PASSWORD"]
+    )
+  ensure
+    File.delete(cert_path) if cert_path && File.exist?(cert_path)
+  end
+end
