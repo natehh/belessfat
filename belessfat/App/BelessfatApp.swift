@@ -30,6 +30,7 @@ struct BelessfatApp: App {
             WorkoutTemplateExercise.self,
             WorkoutSession.self,
             WorkoutSetLog.self,
+            SwimSegment.self,
             WorkoutSettings.self,
             ProgressPhoto.self
         ])

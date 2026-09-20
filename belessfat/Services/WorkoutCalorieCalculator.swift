@@ -103,4 +103,33 @@ enum WorkoutCalorieCalculator {
         let met = baseMET + inclineBonus
         return calories(met: met, weightLbs: weightLbs, durationMinutes: durationMinutes)
     }
+
+    /// Allocates clock time by typical stroke pace, then applies each stroke's MET.
+    static func swimmingCalories(
+        durationMinutes: Double,
+        weightLbs: Double,
+        poolLength: PoolLength,
+        segments: [(stroke: SwimStroke, lengths: Int)]
+    ) -> Double {
+        let valid = segments.filter { $0.lengths > 0 }
+        guard durationMinutes > 0, weightLbs > 0 else { return 0 }
+        if valid.isEmpty {
+            return calories(met: 8.0, weightLbs: weightLbs, durationMinutes: durationMinutes)
+        }
+
+        let estimatedMinutes = valid.map { segment -> (met: Double, minutes: Double) in
+            let meters = Double(segment.lengths) * poolLength.meters
+            let minutes = meters / max(segment.stroke.relativeVelocityMetersPerMin, 1)
+            return (segment.stroke.met, minutes)
+        }
+        let totalEstimated = estimatedMinutes.reduce(0) { $0 + $1.minutes }
+        guard totalEstimated > 0 else {
+            return calories(met: 8.0, weightLbs: weightLbs, durationMinutes: durationMinutes)
+        }
+
+        return estimatedMinutes.reduce(0) { partial, item in
+            let allocated = durationMinutes * (item.minutes / totalEstimated)
+            return partial + calories(met: item.met, weightLbs: weightLbs, durationMinutes: allocated)
+        }
+    }
 }

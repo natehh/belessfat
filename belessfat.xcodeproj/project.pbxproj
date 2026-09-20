@@ -78,6 +78,7 @@
 		F00100000000000000000045 /* CursorBodyFatEstimateClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00200000000000000000048 /* CursorBodyFatEstimateClient.swift */; };
 		F00100000000000000000046 /* AIBodyFatEstimateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00200000000000000000049 /* AIBodyFatEstimateView.swift */; };
 		F00100000000000000000047 /* AppStoreScreenshotSeeder.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0020000000000000000004A /* AppStoreScreenshotSeeder.swift */; };
+		F00100000000000000000048 /* SwimSegmentsEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0020000000000000000004B /* SwimSegmentsEditor.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -156,6 +157,7 @@
 		F00200000000000000000048 /* CursorBodyFatEstimateClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CursorBodyFatEstimateClient.swift; sourceTree = "<group>"; };
 		F00200000000000000000049 /* AIBodyFatEstimateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIBodyFatEstimateView.swift; sourceTree = "<group>"; };
 		F0020000000000000000004A /* AppStoreScreenshotSeeder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStoreScreenshotSeeder.swift; sourceTree = "<group>"; };
+		F0020000000000000000004B /* SwimSegmentsEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwimSegmentsEditor.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -366,6 +368,7 @@
 				F00200000000000000000036 /* WorkoutReportsView.swift */,
 				F00200000000000000000037 /* WorkoutSettingsView.swift */,
 				F00200000000000000000038 /* WorkoutTimeSection.swift */,
+				F0020000000000000000004B /* SwimSegmentsEditor.swift */,
 			);
 			path = Workout;
 			sourceTree = "<group>";
@@ -499,6 +502,7 @@
 				F00100000000000000000033 /* WorkoutReportsView.swift in Sources */,
 				F00100000000000000000034 /* WorkoutSettingsView.swift in Sources */,
 				F00100000000000000000035 /* WorkoutTimeSection.swift in Sources */,
+				F00100000000000000000048 /* SwimSegmentsEditor.swift in Sources */,
 				F00100000000000000000036 /* ProgressPhoto.swift in Sources */,
 				F00100000000000000000037 /* ProgressPhotoService.swift in Sources */,
 				F00100000000000000000038 /* ProgressPhotosView.swift in Sources */,

@@ -19,6 +19,8 @@ struct AddWorkoutSheet: View {
     // Cardio fields
     @State private var treadmillSpeed = 3.5
     @State private var treadmillIncline = 0.0
+    @State private var poolLength: PoolLength = .yards25
+    @State private var swimSegments: [SwimSegmentDraft] = [SwimSegmentDraft()]
 
     @State private var createdStrengthSession: WorkoutSession?
 
@@ -41,6 +43,8 @@ struct AddWorkoutSheet: View {
                     strengthSection
                 } else if workoutType == .treadmill {
                     treadmillSection
+                } else if workoutType == .swimming {
+                    swimmingSection
                 } else {
                     cardioSection
                 }
@@ -49,7 +53,7 @@ struct AddWorkoutSheet: View {
                     workoutEndAt: $workoutEndAt,
                     durationMinutes: durationMinutes,
                     syncToHealthKit: syncToHealthKit,
-                    includesSteps: workoutType != .strength
+                    includesSteps: workoutType.writesHealthKitSteps
                 )
 
                 Section("HealthKit") {
@@ -105,6 +109,21 @@ struct AddWorkoutSheet: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+        }
+    }
+
+    private var swimmingSection: some View {
+        Group {
+            Section("Duration") {
+                NumericStepperField(
+                    title: "Duration",
+                    value: $durationMinutes,
+                    range: 5...240,
+                    step: 5,
+                    suffix: "min"
+                )
+            }
+            SwimSegmentsEditor(poolLength: $poolLength, segments: $swimSegments)
         }
     }
 
@@ -174,7 +193,7 @@ struct AddWorkoutSheet: View {
                 context: context
             )
             createdStrengthSession = session
-        case .tennisSingles, .tennisDoubles, .treadmill:
+        case .tennisSingles, .tennisDoubles, .treadmill, .swimming:
             let session = WorkoutSession(
                 date: date,
                 workoutType: workoutType,
@@ -187,6 +206,10 @@ struct AddWorkoutSheet: View {
             }
             WorkoutService.applyWorkoutEnd(workoutEndAt, to: session)
             context.insert(session)
+            if workoutType == .swimming {
+                session.poolLength = poolLength
+                WorkoutService.replaceSwimSegments(on: session, drafts: swimSegments, context: context)
+            }
             try? context.save()
             Task {
                 await WorkoutService.finalizeCardioSession(session, context: context, healthKit: healthKit)
