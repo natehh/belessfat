@@ -119,7 +119,7 @@ private struct SettingsFormContent: View {
             } header: {
                 Text("HealthKit")
             } footer: {
-                Text("You can change HealthKit access in the Health app. This app does not use CareKit.")
+                Text("You can change HealthKit access in the Health app. Weight from HealthKit fills the diary; a newer manual save wins until a later HealthKit sample arrives. This app does not use CareKit.")
             }
 
             Section {

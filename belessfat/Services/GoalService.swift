@@ -30,12 +30,34 @@ enum GoalService {
 
     static func saveWeight(_ lbs: Double, for date: Date, context: ModelContext) {
         let day = DateHelpers.startOfDay(date)
+        let recordedAt = Date()
         if let existing = weightEntry(for: day, context: context) {
             existing.weightLbs = lbs
+            existing.recordedAt = recordedAt
+            existing.source = .manual
         } else {
-            context.insert(WeightEntry(date: day, weightLbs: lbs))
+            context.insert(WeightEntry(date: day, weightLbs: lbs, recordedAt: recordedAt, source: .manual))
         }
         try? context.save()
+    }
+
+    /// Applies a HealthKit sample if it is newer than the local value for that day.
+    /// Legacy rows with no `recordedAt` use the calendar day, not `Date()`, so a just-logged
+    /// HealthKit weigh-in can still win. Older samples on that day do not clobber a timestamped save.
+    @discardableResult
+    static func applyHealthKitWeight(_ lbs: Double, recordedAt: Date, for date: Date, context: ModelContext) -> Bool {
+        let day = DateHelpers.startOfDay(date)
+        if let existing = weightEntry(for: day, context: context) {
+            let localTime = existing.recordedAt ?? existing.date
+            guard recordedAt > localTime else { return false }
+            existing.weightLbs = lbs
+            existing.recordedAt = recordedAt
+            existing.source = .healthKit
+        } else {
+            context.insert(WeightEntry(date: day, weightLbs: lbs, recordedAt: recordedAt, source: .healthKit))
+        }
+        try? context.save()
+        return true
     }
 
     static func weightEntries(from start: Date, to end: Date, context: ModelContext) -> [WeightEntry] {

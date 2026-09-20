@@ -26,6 +26,11 @@ enum FoodSource: String, Codable {
     case custom
 }
 
+enum WeightEntrySource: String, Codable {
+    case manual
+    case healthKit
+}
+
 enum GoalType: String, Codable, CaseIterable, Identifiable {
     case lose
     case maintain

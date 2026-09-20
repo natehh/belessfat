@@ -21,6 +21,7 @@ struct DiaryView: View {
     @State private var expandedMeals: Set<MealCategory> = Set(MealCategory.allCases)
     @State private var healthExpanded = true
     @State private var weightInput = ""
+    @State private var lastLoadedWeightText = ""
     @State private var weightSaveError: String?
     @State private var editingEntry: LogEntry?
 
@@ -371,11 +372,20 @@ struct DiaryView: View {
                 }
                 #endif
                 healthKit.refreshAuthorizationStatus()
+                healthKit.startObservingWeight(context: context)
                 Task { await healthKit.sync(for: selectedDate, context: context) }
             }
             .onChange(of: selectedDate) { _, newDate in
                 loadWeightInput()
                 Task { await healthKit.sync(for: newDate, context: context) }
+            }
+            .onChange(of: todaysWeightEntry?.weightLbs) { _, _ in
+                guard !isWeightInputDirty else { return }
+                loadWeightInput()
+            }
+            .onChange(of: todaysWeightEntry?.recordedAt) { _, _ in
+                guard !isWeightInputDirty else { return }
+                loadWeightInput()
             }
             .onChange(of: scenePhase) { _, phase in
                 guard phase == .active else { return }
@@ -468,7 +478,16 @@ struct DiaryView: View {
                 Button("Save") { saveWeight() }
                     .buttonStyle(.borderedProminent)
             }
+            if todaysWeightEntry?.source == .healthKit {
+                Text("From HealthKit")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
+    }
+
+    private var isWeightInputDirty: Bool {
+        weightInput != lastLoadedWeightText
     }
 
     private func loadWeightInput() {
@@ -477,12 +496,14 @@ struct DiaryView: View {
         } else {
             weightInput = ""
         }
+        lastLoadedWeightText = weightInput
     }
 
     private func saveWeight() {
         defer { dismissKeyboard() }
         guard let lbs = Double(weightInput) else { return }
         GoalService.saveWeight(lbs, for: selectedDate, context: context)
+        loadWeightInput()
     }
 
     private func dismissKeyboard() {
