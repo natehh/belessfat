@@ -48,7 +48,11 @@ platform :ios do
       configuration: "Release",
       export_method: "app-store",
       export_team_id: "59A48JJMU8",
-      xcargs: "-allowProvisioningUpdates",
+      export_options: {
+        signingStyle: "automatic",
+        teamID: "59A48JJMU8"
+      },
+      xcargs: "-allowProvisioningUpdates CODE_SIGN_STYLE=Automatic",
       output_directory: "build",
       output_name: "belessfat",
       clean: true
