@@ -9,6 +9,7 @@ struct BarcodeScannerView: View {
     @ObservedObject private var network = NetworkMonitor.shared
     let selectedDate: Date
     var recipeMode: Bool = false
+    var defaultMeal: MealCategory? = nil
     var onFoodPrepared: ((Food, Double, ServingUnitType) -> Void)?
     let onDone: () -> Void
 
@@ -20,6 +21,10 @@ struct BarcodeScannerView: View {
     @State private var showLabelCapture = false
     @State private var showManualAdd = false
     @State private var showNotFoundDialog = false
+
+    private var loggingMeal: MealCategory {
+        defaultMeal ?? DiaryService.mostRecentMeal(context: context)
+    }
 
     var body: some View {
         NavigationStack {
@@ -64,7 +69,9 @@ struct BarcodeScannerView: View {
                 LogFoodSheet(
                     food: presentation.food,
                     defaultMeal: presentation.defaultMeal,
-                    date: selectedDate
+                    date: selectedDate,
+                    initialQuantity: presentation.quantity,
+                    initialUnit: presentation.unit
                 ) {
                     dismiss()
                     onDone()
@@ -80,7 +87,7 @@ struct BarcodeScannerView: View {
                 LabelCaptureView(
                     barcode: scannedBarcode,
                     selectedDate: selectedDate,
-                    defaultMeal: DiaryService.mostRecentMeal(context: context)
+                    defaultMeal: loggingMeal
                 ) {
                     if recipeMode {
                         dismiss()
@@ -95,7 +102,7 @@ struct BarcodeScannerView: View {
                     barcode: scannedBarcode,
                     logImmediately: !recipeMode,
                     selectedDate: selectedDate,
-                    defaultMeal: DiaryService.mostRecentMeal(context: context),
+                    defaultMeal: loggingMeal,
                     onFoodSaved: recipeMode ? { food in
                         quantityPresentation = FoodQuantityPresentation(food: food)
                     } : nil,
@@ -125,9 +132,12 @@ struct BarcodeScannerView: View {
                 if recipeMode {
                     quantityPresentation = FoodQuantityPresentation(food: prepared)
                 } else {
+                    let amount = DiaryService.loggingAmount(for: prepared, context: context)
                     logFoodPresentation = LogFoodPresentation(
                         food: prepared,
-                        defaultMeal: DiaryService.mostRecentMeal(context: context)
+                        defaultMeal: loggingMeal,
+                        quantity: amount.quantity,
+                        unit: amount.unit
                     )
                 }
             } else {

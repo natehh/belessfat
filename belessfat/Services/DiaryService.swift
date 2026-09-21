@@ -218,6 +218,33 @@ enum DiaryService {
         return foods
     }
 
+    struct LoggedAmount {
+        var quantity: Double
+        var unit: ServingUnitType
+    }
+
+    static func lastLoggedAmounts(context: ModelContext) -> [UUID: LoggedAmount] {
+        let descriptor = FetchDescriptor<LogEntry>(
+            sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
+        )
+        let entries = (try? context.fetch(descriptor)) ?? []
+        var result: [UUID: LoggedAmount] = [:]
+        for entry in entries {
+            guard let id = entry.food?.id, result[id] == nil else { continue }
+            result[id] = LoggedAmount(quantity: entry.quantity, unit: entry.servingUnit)
+        }
+        return result
+    }
+
+    static func loggingAmount(for food: Food, lastLogged: [UUID: LoggedAmount]? = nil, context: ModelContext? = nil) -> LoggedAmount {
+        let amounts = lastLogged ?? context.map { lastLoggedAmounts(context: $0) } ?? [:]
+        if let last = amounts[food.id], food.availableServingUnits.contains(last.unit) {
+            return last
+        }
+        let fallback = food.defaultLoggingAmount()
+        return LoggedAmount(quantity: fallback.quantity, unit: fallback.unit)
+    }
+
     static func mostRecentMeal(context: ModelContext) -> MealCategory {
         var descriptor = FetchDescriptor<LogEntry>(
             sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
