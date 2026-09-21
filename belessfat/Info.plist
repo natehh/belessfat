@@ -17,15 +17,15 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.0</string>
+	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
-	<string>1</string>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>belessfat needs camera access to scan barcodes and nutrition labels.</string>
 	<key>NSHealthShareUsageDescription</key>
-	<string>belessfat uses HealthKit to read your steps and active calories from Apple Health.</string>
+	<string>belessfat uses HealthKit to read your steps, active calories, and body weight from Apple Health.</string>
 	<key>NSHealthUpdateUsageDescription</key>
 	<string>belessfat uses HealthKit to optionally write workout calories and estimated steps to Apple Health.</string>
 	<key>NSPhotoLibraryUsageDescription</key>

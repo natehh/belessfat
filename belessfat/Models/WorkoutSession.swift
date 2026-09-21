@@ -12,6 +12,7 @@ final class WorkoutSession {
     var syncToHealthKit: Bool
     var treadmillSpeedMph: Double?
     var treadmillInclinePercent: Double?
+    var poolLengthRaw: String?
     var estimatedSteps: Int
     var estimatedCalories: Double
     var healthKitSyncId: String?
@@ -20,6 +21,8 @@ final class WorkoutSession {
     var createdAt: Date
     @Relationship(deleteRule: .cascade, inverse: \WorkoutSetLog.session)
     var setLogs: [WorkoutSetLog]
+    @Relationship(deleteRule: .cascade, inverse: \SwimSegment.session)
+    var swimSegments: [SwimSegment]
 
     var workoutType: WorkoutType {
         get { WorkoutType(rawValue: workoutTypeRaw) ?? .strength }
@@ -42,6 +45,20 @@ final class WorkoutSession {
         self.workoutEndAt = Date()
         self.createdAt = Date()
         self.setLogs = []
+        self.swimSegments = []
+    }
+
+    var poolLength: PoolLength {
+        get { PoolLength(rawValue: poolLengthRaw ?? "") ?? .yards25 }
+        set { poolLengthRaw = newValue.rawValue }
+    }
+
+    var sortedSwimSegments: [SwimSegment] {
+        swimSegments.sorted { $0.sortOrder < $1.sortOrder }
+    }
+
+    var swimTotalLengths: Int {
+        swimSegments.reduce(0) { $0 + $1.lengths }
     }
 
     var displayTitle: String {
@@ -51,6 +68,7 @@ final class WorkoutSession {
         case .tennisSingles: return "Tennis (Singles)"
         case .tennisDoubles: return "Tennis (Doubles)"
         case .treadmill: return "Treadmill"
+        case .swimming: return "Swimming"
         }
     }
 
@@ -120,6 +138,27 @@ final class WorkoutSetLog {
     func freezeFromExercise() {
         guard snapshotExerciseName == nil, let exercise else { return }
         snapshotExerciseName = exercise.name
+    }
+}
+
+@Model
+final class SwimSegment {
+    var id: UUID
+    var strokeRaw: String
+    var lengths: Int
+    var sortOrder: Int
+    var session: WorkoutSession?
+
+    var stroke: SwimStroke {
+        get { SwimStroke(rawValue: strokeRaw) ?? .freestyle }
+        set { strokeRaw = newValue.rawValue }
+    }
+
+    init(stroke: SwimStroke, lengths: Int, sortOrder: Int) {
+        self.id = UUID()
+        self.strokeRaw = stroke.rawValue
+        self.lengths = max(0, lengths)
+        self.sortOrder = sortOrder
     }
 }
 

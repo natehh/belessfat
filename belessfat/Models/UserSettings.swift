@@ -120,11 +120,26 @@ final class WeightEntry {
     var id: UUID
     var date: Date
     var weightLbs: Double
+    /// When this value was last set. Nil on older rows (treated as that calendar day).
+    var recordedAt: Date?
+    var sourceRaw: String?
 
-    init(date: Date, weightLbs: Double) {
+    var source: WeightEntrySource {
+        get { WeightEntrySource(rawValue: sourceRaw ?? "") ?? .manual }
+        set { sourceRaw = newValue.rawValue }
+    }
+
+    init(
+        date: Date,
+        weightLbs: Double,
+        recordedAt: Date = Date(),
+        source: WeightEntrySource = .manual
+    ) {
         self.id = UUID()
         self.date = Calendar.current.startOfDay(for: date)
         self.weightLbs = weightLbs
+        self.recordedAt = recordedAt
+        self.sourceRaw = source.rawValue
     }
 }
 

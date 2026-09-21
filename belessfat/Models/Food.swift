@@ -133,6 +133,33 @@ final class Food {
         return units.isEmpty ? [.serving] : units
     }
 
+    /// Quantity and unit used when last-logged serving is unknown.
+    func defaultLoggingAmount() -> (quantity: Double, unit: ServingUnitType) {
+        let available = availableServingUnits
+        let unit: ServingUnitType
+        if source == .usda, available.contains(.grams) {
+            unit = .grams
+        } else if available.contains(.tablespoon) {
+            unit = .tablespoon
+        } else if available.contains(.teaspoon) {
+            unit = .teaspoon
+        } else if available.contains(.medium) {
+            unit = .medium
+        } else if available.contains(.serving) {
+            unit = .serving
+        } else if available.contains(.cup) {
+            unit = .cup
+        } else {
+            unit = available.first ?? .grams
+        }
+        let quantity: Double
+        switch unit {
+        case .grams: quantity = 100
+        default: quantity = 1
+        }
+        return (quantity, unit)
+    }
+
     private var hasMeaningfulServingUnit: Bool {
         guard caloriesPerServing > 0 || proteinPerServing > 0 || carbsPerServing > 0 || fatPerServing > 0 else { return false }
         if let desc = servingDescription?.trimmingCharacters(in: .whitespacesAndNewlines), !desc.isEmpty {

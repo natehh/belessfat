@@ -80,6 +80,7 @@ private struct SettingsFormContent: View {
     @Binding var showImport: Bool
     @Binding var showCronometerImport: Bool
     let onDeleteAllData: () -> Void
+    @State private var showDeleteAllConfirm = false
 
     var body: some View {
         Form {
@@ -119,7 +120,7 @@ private struct SettingsFormContent: View {
             } header: {
                 Text("HealthKit")
             } footer: {
-                Text("You can change HealthKit access in the Health app. This app does not use CareKit.")
+                Text("You can change HealthKit access in the Health app. Weight from HealthKit fills the diary; a newer manual save wins until a later HealthKit sample arrives. This app does not use CareKit.")
             }
 
             Section {
@@ -257,7 +258,7 @@ private struct SettingsFormContent: View {
             }
 
             Section("Data") {
-                Button("Delete All Data", role: .destructive) { onDeleteAllData() }
+                Button("Delete All Data", role: .destructive) { showDeleteAllConfirm = true }
             }
 
             Section("About") {
@@ -266,6 +267,12 @@ private struct SettingsFormContent: View {
             }
         }
         .scrollDismissesKeyboard(.interactively)
+        .confirmationDialog("Delete All Data?", isPresented: $showDeleteAllConfirm, titleVisibility: .visible) {
+            Button("Delete All Data", role: .destructive) { onDeleteAllData() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This permanently deletes foods, recipes, diary entries, weights, photos, and settings on this device. This cannot be undone.")
+        }
         .onDisappear { save() }
     }
 

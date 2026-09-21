@@ -26,6 +26,11 @@ enum FoodSource: String, Codable {
     case custom
 }
 
+enum WeightEntrySource: String, Codable {
+    case manual
+    case healthKit
+}
+
 enum GoalType: String, Codable, CaseIterable, Identifiable {
     case lose
     case maintain
@@ -175,6 +180,7 @@ enum WorkoutType: String, Codable, CaseIterable, Identifiable {
     case tennisSingles
     case tennisDoubles
     case treadmill
+    case swimming
 
     var id: String { rawValue }
 
@@ -184,6 +190,7 @@ enum WorkoutType: String, Codable, CaseIterable, Identifiable {
         case .tennisSingles: return "Tennis (Singles)"
         case .tennisDoubles: return "Tennis (Doubles)"
         case .treadmill: return "Treadmill"
+        case .swimming: return "Swimming"
         }
     }
 
@@ -192,7 +199,103 @@ enum WorkoutType: String, Codable, CaseIterable, Identifiable {
         case .strength: return "dumbbell.fill"
         case .tennisSingles, .tennisDoubles: return "figure.tennis"
         case .treadmill: return "figure.run"
+        case .swimming: return "figure.pool.swim"
         }
+    }
+
+    var writesHealthKitSteps: Bool {
+        switch self {
+        case .tennisSingles, .tennisDoubles, .treadmill: return true
+        case .strength, .swimming: return false
+        }
+    }
+}
+
+enum SwimStroke: String, Codable, CaseIterable, Identifiable {
+    case freestyle
+    case backstroke
+    case breaststroke
+    case butterfly
+    case kick
+    case mixed
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .freestyle: return "Freestyle"
+        case .backstroke: return "Backstroke"
+        case .breaststroke: return "Breaststroke"
+        case .butterfly: return "Butterfly"
+        case .kick: return "Kick"
+        case .mixed: return "IM / Mixed"
+        }
+    }
+
+    /// Compendium of Physical Activities, typical lap-swim effort (not leisurely floating).
+    var met: Double {
+        switch self {
+        case .freestyle: return 8.3
+        case .backstroke: return 8.0
+        case .breaststroke: return 9.0
+        case .butterfly: return 13.8
+        case .kick: return 6.0
+        case .mixed: return 9.5
+        }
+    }
+
+    /// Relative velocity for splitting clock time across strokes (m/min).
+    var relativeVelocityMetersPerMin: Double {
+        switch self {
+        case .freestyle: return 50
+        case .backstroke: return 45
+        case .breaststroke: return 40
+        case .butterfly: return 35
+        case .kick: return 30
+        case .mixed: return 45
+        }
+    }
+}
+
+enum PoolLength: String, Codable, CaseIterable, Identifiable {
+    case yards25
+    case meters25
+    case meters50
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .yards25: return "25 yd"
+        case .meters25: return "25 m"
+        case .meters50: return "50 m"
+        }
+    }
+
+    var meters: Double {
+        switch self {
+        case .yards25: return 22.86
+        case .meters25: return 25
+        case .meters50: return 50
+        }
+    }
+
+    var lengthLabel: String {
+        switch self {
+        case .yards25: return "yd"
+        case .meters25, .meters50: return "m"
+        }
+    }
+
+    var lengthValue: Int {
+        switch self {
+        case .yards25, .meters25: return 25
+        case .meters50: return 50
+        }
+    }
+
+    func distanceLabel(lengths: Int) -> String {
+        "\(lengths * lengthValue) \(lengthLabel)"
     }
 }
 

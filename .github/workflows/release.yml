@@ -1,0 +1,59 @@
+name: App Store release
+
+# Merge into `release` archives, uploads, creates/updates the App Store
+# version, and submits for review. What's New is the merge commit body.
+on:
+  push:
+    branches:
+      - release
+  workflow_dispatch:
+
+jobs:
+  submit:
+    if: github.ref == 'refs/heads/release'
+    runs-on: macos-15
+    timeout-minutes: 90
+    env:
+      APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+      APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+      APP_STORE_CONNECT_KEY: ${{ secrets.APP_STORE_CONNECT_KEY }}
+      BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
+      P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Collect What's New from the merge commit
+        run: |
+          set -euo pipefail
+          NOTES="$(git log -1 --pretty=%B)"
+          BODY="$(printf '%s\n' "$NOTES" | awk 'NR==1 && /^Merge (pull request|branch)/ {next} {print}')"
+          if [ -z "$(printf '%s\n' "$BODY" | sed '/^[[:space:]]*$/d')" ]; then
+            echo "The merge commit body is empty. Write App Store What's New notes in the merge commit (see AGENTS.md)."
+            exit 1
+          fi
+          {
+            echo "RELEASE_NOTES<<EOF"
+            printf '%s\n' "$BODY"
+            echo "EOF"
+          } >> "$GITHUB_ENV"
+
+      - name: Write USDA config
+        run: |
+          if [ -n "${{ secrets.USDA_API_KEY }}" ]; then
+            printf 'USDA_API_KEY = %s\n' "${{ secrets.USDA_API_KEY }}" > Config.local.xcconfig
+          fi
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+          bundler-cache: true
+
+      - name: Archive, upload, and submit
+        run: bundle exec fastlane ios app_store_release

@@ -243,6 +243,21 @@ enum ServingConverter {
         case .large: return "large (\(Int(food.largeServingGrams ?? 0))g)"
         }
     }
+
+    static func compactAmountLabel(quantity: Double, unit: ServingUnitType, food: Food) -> String {
+        let qty: String
+        if unit == .grams || abs(quantity - quantity.rounded()) < 0.001 {
+            qty = String(Int(quantity.rounded()))
+        } else {
+            qty = String(format: "%g", quantity)
+        }
+        if unit == .serving,
+           let desc = food.servingDescription?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !desc.isEmpty {
+            return abs(quantity - 1) < 0.001 ? desc : "\(qty) \(desc)"
+        }
+        return "\(qty) \(unit.displayName)"
+    }
 }
 
 enum MacroCalculator {
@@ -354,6 +369,10 @@ enum MacroCalculator {
 enum DateHelpers {
     static func startOfDay(_ date: Date) -> Date {
         Calendar.current.startOfDay(for: date)
+    }
+
+    static func startOfNextDay(_ date: Date) -> Date {
+        Calendar.current.date(byAdding: .day, value: 1, to: startOfDay(date)) ?? startOfDay(date)
     }
 
     static func isSameDay(_ a: Date, _ b: Date) -> Bool {

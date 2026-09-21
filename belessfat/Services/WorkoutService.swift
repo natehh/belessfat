@@ -2,6 +2,19 @@ import Foundation
 import SwiftData
 import HealthKit
 
+struct SwimSegmentDraft: Identifiable, Equatable {
+    var id = UUID()
+    var stroke: SwimStroke = .freestyle
+    var lengths: Double = 0
+
+    init(stroke: SwimStroke = .freestyle, lengths: Int = 0) {
+        self.stroke = stroke
+        self.lengths = Double(lengths)
+    }
+
+    var lengthsInt: Int { max(0, Int(lengths.rounded())) }
+}
+
 @MainActor
 enum WorkoutService {
     static func settings(context: ModelContext) -> WorkoutSettings {
@@ -237,6 +250,14 @@ enum WorkoutService {
                 inclinePercent: incline,
                 weightLbs: weight
             )
+        case .swimming:
+            session.estimatedSteps = 0
+            session.estimatedCalories = WorkoutCalorieCalculator.swimmingCalories(
+                durationMinutes: session.durationMinutes,
+                weightLbs: weight,
+                poolLength: session.poolLength,
+                segments: session.sortedSwimSegments.map { ($0.stroke, $0.lengths) }
+            )
         default:
             break
         }
@@ -254,6 +275,8 @@ enum WorkoutService {
             activityType = .tennis
         case .treadmill:
             activityType = (session.treadmillSpeedMph ?? 0) >= 4.0 ? .running : .walking
+        case .swimming:
+            activityType = .swimming
         default:
             return
         }
@@ -270,6 +293,24 @@ enum WorkoutService {
             session.healthKitStepSampleId = result.stepSampleUUID?.uuidString
             try? context.save()
         }
+    }
+
+    static func replaceSwimSegments(
+        on session: WorkoutSession,
+        drafts: [SwimSegmentDraft],
+        context: ModelContext
+    ) {
+        for existing in session.swimSegments {
+            context.delete(existing)
+        }
+        session.swimSegments = []
+        for (index, draft) in drafts.enumerated() where draft.lengthsInt > 0 {
+            let segment = SwimSegment(stroke: draft.stroke, lengths: draft.lengthsInt, sortOrder: index)
+            segment.session = session
+            session.swimSegments.append(segment)
+            context.insert(segment)
+        }
+        try? context.save()
     }
 
     static func applyWorkoutEnd(_ end: Date, to session: WorkoutSession) {

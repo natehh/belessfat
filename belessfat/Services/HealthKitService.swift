@@ -18,6 +18,9 @@ final class HealthKitService: ObservableObject {
     @Published private(set) var cachedActiveCalories = 0.0
     @Published private(set) var cachedDate = Date()
 
+    private var bodyMassObserver: HKObserverQuery?
+    private var observedContext: ModelContext?
+
     var isAvailable: Bool {
         HKHealthStore.isHealthDataAvailable()
     }
@@ -43,6 +46,9 @@ final class HealthKitService: ObservableObject {
         }
         if let active = HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned) {
             types.insert(active)
+        }
+        if let weight = HKQuantityType.quantityType(forIdentifier: .bodyMass) {
+            types.insert(weight)
         }
         return types
     }
@@ -99,11 +105,39 @@ final class HealthKitService: ObservableObject {
         await sync(from: date, to: date, context: context)
     }
 
+    func startObservingWeight(context: ModelContext) {
+        observedContext = context
+        guard isAvailable, bodyMassObserver == nil,
+              let type = HKQuantityType.quantityType(forIdentifier: .bodyMass) else { return }
+
+        let query = HKObserverQuery(sampleType: type, predicate: nil) { [weak self] _, completionHandler, error in
+            Task { @MainActor in
+                defer { completionHandler() }
+                if let error {
+                    Self.log.error("weight observer: \(error.localizedDescription, privacy: .public)")
+                    return
+                }
+                guard let self, let context = self.observedContext else { return }
+                let end = Date()
+                let start = Calendar.current.date(byAdding: .day, value: -2, to: end) ?? end
+                let imported = await self.importBodyMass(from: start, to: end, context: context)
+                if imported > 0 {
+                    self.lastSyncMessage = "Synced \(imported) weight \(imported == 1 ? "update" : "updates") from HealthKit."
+                }
+            }
+        }
+        bodyMassObserver = query
+        store.execute(query)
+    }
+
     func sync(from start: Date, to end: Date, context: ModelContext) async {
         guard isAvailable else {
             lastSyncMessage = "HealthKit is not available on this device."
             return
         }
+
+        observedContext = context
+        await ensureReadAuthorization()
 
         let startDay = DateHelpers.startOfDay(start)
         let endDay = DateHelpers.startOfDay(end)
@@ -129,16 +163,39 @@ final class HealthKitService: ObservableObject {
             cachedDate = today
         }
 
+        let weightLookback = Calendar.current.date(byAdding: .day, value: -89, to: startDay) ?? startDay
+        let weightImport = await importBodyMassDetailed(from: weightLookback, to: endDay, context: context)
+        let importedWeights = weightImport.imported
+
         isAuthorized = true
         authorizationDenied = false
         if days.count == 1 {
-            if totalSteps > 0 {
-                lastSyncMessage = "Synced \(totalSteps) steps."
+            if totalSteps > 0 && importedWeights > 0 {
+                lastSyncMessage = "Synced \(totalSteps) steps and \(importedWeights) weight \(importedWeights == 1 ? "update" : "updates")."
+            } else if importedWeights > 0 {
+                lastSyncMessage = "Synced \(importedWeights) weight \(importedWeights == 1 ? "update" : "updates") from HealthKit."
+            } else if totalSteps > 0 && weightImport.samplesFound > 0 {
+                lastSyncMessage = "Synced \(totalSteps) steps. HealthKit weight is already up to date."
+            } else if totalSteps > 0 {
+                lastSyncMessage = "Synced \(totalSteps) steps. No newer HealthKit weight to apply."
+            } else if weightImport.samplesFound > 0 {
+                lastSyncMessage = "HealthKit weight is already up to date."
             } else {
-                lastSyncMessage = "No step data returned for this day."
+                lastSyncMessage = "No step or weight data returned for this day."
             }
         } else {
-            lastSyncMessage = "Synced \(days.count) days (\(daysWithData) with HealthKit data, \(totalSteps) total steps)."
+            lastSyncMessage = "Synced \(days.count) days (\(daysWithData) with HealthKit data, \(totalSteps) total steps, \(importedWeights) weight \(importedWeights == 1 ? "update" : "updates"))."
+        }
+    }
+
+    private func ensureReadAuthorization() async {
+        guard isAvailable else { return }
+        do {
+            try await store.requestAuthorization(toShare: [], read: readTypes)
+            authorizationDenied = false
+        } catch {
+            authorizationDenied = true
+            Self.log.error("read authorization failed: \(error.localizedDescription, privacy: .public)")
         }
     }
 
@@ -281,6 +338,69 @@ final class HealthKitService: ObservableObject {
         return await fetchSum(for: type, date: date, unit: .kilocalorie())
     }
 
+    private struct WeightImportSummary {
+        var samplesFound: Int
+        var imported: Int
+    }
+
+    /// Latest HealthKit body-mass sample per calendar day. Overwrites a local day only when the sample is newer.
+    @discardableResult
+    private func importBodyMass(from start: Date, to end: Date, context: ModelContext) async -> Int {
+        await importBodyMassDetailed(from: start, to: end, context: context).imported
+    }
+
+    private func importBodyMassDetailed(from start: Date, to end: Date, context: ModelContext) async -> WeightImportSummary {
+        let samples = await fetchBodyMassSamples(from: start, to: end)
+        var latestByDay: [Date: (recordedAt: Date, lbs: Double)] = [:]
+        for sample in samples {
+            let day = DateHelpers.startOfDay(sample.recordedAt)
+            if let existing = latestByDay[day], existing.recordedAt >= sample.recordedAt {
+                continue
+            }
+            latestByDay[day] = sample
+        }
+
+        var imported = 0
+        for (day, sample) in latestByDay {
+            if GoalService.applyHealthKitWeight(sample.lbs, recordedAt: sample.recordedAt, for: day, context: context) {
+                imported += 1
+            } else {
+                Self.log.info("skipped HealthKit weight \(sample.lbs) lbs for \(day.description, privacy: .public); local value is newer")
+            }
+        }
+        Self.log.info("body mass import: \(samples.count) sample(s), \(imported) applied")
+        return WeightImportSummary(samplesFound: samples.count, imported: imported)
+    }
+
+    private func fetchBodyMassSamples(from start: Date, to end: Date) async -> [(recordedAt: Date, lbs: Double)] {
+        guard let type = HKQuantityType.quantityType(forIdentifier: .bodyMass) else { return [] }
+        let startDay = DateHelpers.startOfDay(start)
+        let endExclusive = DateHelpers.startOfNextDay(end)
+        let predicate = HKQuery.predicateForSamples(withStart: startDay, end: endExclusive, options: [.strictStartDate, .strictEndDate])
+
+        return await withCheckedContinuation { continuation in
+            let query = HKSampleQuery(
+                sampleType: type,
+                predicate: predicate,
+                limit: HKObjectQueryNoLimit,
+                sortDescriptors: [NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: false)]
+            ) { _, samples, error in
+                if let error {
+                    Self.log.error("body mass query failed: \(error.localizedDescription, privacy: .public)")
+                }
+                let mapped = (samples as? [HKQuantitySample] ?? []).map { sample in
+                    (
+                        recordedAt: max(sample.startDate, sample.endDate),
+                        lbs: sample.quantity.doubleValue(for: .pound())
+                    )
+                }
+                Self.log.info("body mass query returned \(mapped.count) sample(s)")
+                continuation.resume(returning: mapped)
+            }
+            store.execute(query)
+        }
+    }
+
     private func fetchSum(for type: HKQuantityType, date: Date, unit: HKUnit) async -> Double {
         let start = DateHelpers.startOfDay(date)
         guard let end = Calendar.current.date(byAdding: .day, value: 1, to: start) else { return 0 }
@@ -315,7 +435,7 @@ final class HealthKitService: ObservableObject {
 
 enum HealthKitCopy {
     static let settingsDescription =
-        "This app uses HealthKit to read step count and active energy, and can optionally write workouts and estimated steps."
+        "This app uses HealthKit to read step count, active energy, and body weight, and can optionally write workouts and estimated steps."
     static let workoutWriteDescription =
         "Optional. Writes workout calories and estimated steps to HealthKit (Apple Health)."
     static let diaryStepsFooter =

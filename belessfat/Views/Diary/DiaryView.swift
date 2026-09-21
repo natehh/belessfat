@@ -7,11 +7,12 @@ struct DiaryView: View {
     @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject private var healthKit: HealthKitService
     @Query(sort: \UserSettings.id) private var settingsQuery: [UserSettings]
+    @Query(sort: \LogEntry.createdAt) private var allLogEntries: [LogEntry]
     @Query(sort: \DailyHealthSnapshot.date, order: .reverse) private var healthSnapshots: [DailyHealthSnapshot]
     @Query(sort: \WeightGoal.targetDate, order: .reverse) private var weightGoals: [WeightGoal]
     @Query(sort: \WeightEntry.date, order: .reverse) private var allWeightEntries: [WeightEntry]
     @State private var selectedDate = Date()
-    @State private var showAddFood = false
+    @State private var addFoodMeal: MealCategory?
     @State private var showScanner = false
     @State private var showQuickActions = false
     @State private var showFavorites = false
@@ -20,6 +21,7 @@ struct DiaryView: View {
     @State private var expandedMeals: Set<MealCategory> = Set(MealCategory.allCases)
     @State private var healthExpanded = true
     @State private var weightInput = ""
+    @State private var lastLoadedWeightText = ""
     @State private var weightSaveError: String?
     @State private var editingEntry: LogEntry?
 
@@ -32,15 +34,21 @@ struct DiaryView: View {
     }
 
     private var entries: [LogEntry] {
-        DiaryService.entries(for: selectedDate, context: context)
+        allLogEntries.filter { DateHelpers.isSameDay($0.date, selectedDate) }
     }
 
     private var totals: MacroTotals {
-        DiaryService.totals(for: selectedDate, context: context)
+        entries.reduce(.zero) { $0 + $1.macros }
     }
 
     private var weekTotals: MacroTotals {
-        DiaryService.weekTotals(containing: selectedDate, weekStartsOn: settings.weekStartDay, context: context)
+        let start = DateHelpers.weekStart(containing: selectedDate, weekStartsOn: settings.weekStartDay)
+        let endExclusive = DateHelpers.startOfNextDay(
+            DateHelpers.weekEnd(containing: selectedDate, weekStartsOn: settings.weekStartDay)
+        )
+        return allLogEntries
+            .filter { $0.date >= start && $0.date < endExclusive }
+            .reduce(.zero) { $0 + $1.macros }
     }
 
     private var weekRangeLabel: String {
@@ -209,8 +217,13 @@ struct DiaryView: View {
                                     .foregroundStyle(.secondary)
                             } else {
                                 ForEach(mealEntries) { entry in
-                                    LogEntryRow(entry: entry)
-                                        .swipeActions(edge: .trailing) {
+                                    Button {
+                                        editingEntry = entry
+                                    } label: {
+                                        LogEntryRow(entry: entry)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .swipeActions(edge: .trailing) {
                                             Button(role: .destructive) {
                                                 DiaryService.delete(entry, context: context)
                                             } label: { Label("Delete", systemImage: "trash") }
@@ -220,7 +233,7 @@ struct DiaryView: View {
                                                 Label("Duplicate", systemImage: "plus.square.on.square")
                                             }
                                         }
-                                        .swipeActions(edge: .leading) {
+                                    .swipeActions(edge: .leading) {
                                             if !isViewingToday {
                                                 Button {
                                                     copyEntryToToday(entry)
@@ -233,7 +246,7 @@ struct DiaryView: View {
                                                 Label("Edit", systemImage: "pencil")
                                             }
                                         }
-                                        .contextMenu {
+                                    .contextMenu {
                                             Button("Edit") { editingEntry = entry }
                                             Button("Duplicate") { DiaryService.duplicate(entry, context: context) }
                                             if !isViewingToday {
@@ -273,6 +286,17 @@ struct DiaryView: View {
                                 .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
+
+                            Button {
+                                expandedMeals.insert(meal)
+                                addFoodMeal = meal
+                            } label: {
+                                Image(systemName: "plus.circle")
+                                    .font(.body)
+                                    .foregroundStyle(.tint)
+                            }
+                            .buttonStyle(.borderless)
+                            .accessibilityLabel("Add food to \(meal.displayName)")
 
                             if !mealEntries.isEmpty {
                                 Menu {
@@ -325,13 +349,15 @@ struct DiaryView: View {
                     Button { showScanner = true } label: {
                         Image(systemName: "barcode.viewfinder")
                     }
-                    Button { showAddFood = true } label: {
+                    Button {
+                        addFoodMeal = DiaryService.mostRecentMeal(context: context)
+                    } label: {
                         Image(systemName: "plus")
                     }
                 }
             }
-            .sheet(isPresented: $showAddFood) {
-                FoodSearchView(selectedDate: selectedDate)
+            .sheet(item: $addFoodMeal) { meal in
+                FoodSearchView(selectedDate: selectedDate, defaultMeal: meal)
             }
             .sheet(isPresented: $showScanner) {
                 BarcodeScannerView(selectedDate: selectedDate, onDone: {})
@@ -364,11 +390,20 @@ struct DiaryView: View {
                 }
                 #endif
                 healthKit.refreshAuthorizationStatus()
+                healthKit.startObservingWeight(context: context)
                 Task { await healthKit.sync(for: selectedDate, context: context) }
             }
             .onChange(of: selectedDate) { _, newDate in
                 loadWeightInput()
                 Task { await healthKit.sync(for: newDate, context: context) }
+            }
+            .onChange(of: todaysWeightEntry?.weightLbs) { _, _ in
+                guard !isWeightInputDirty else { return }
+                loadWeightInput()
+            }
+            .onChange(of: todaysWeightEntry?.recordedAt) { _, _ in
+                guard !isWeightInputDirty else { return }
+                loadWeightInput()
             }
             .onChange(of: scenePhase) { _, phase in
                 guard phase == .active else { return }
@@ -387,7 +422,7 @@ struct DiaryView: View {
         switch AppStoreScreenshotSeeder.requestedScreen {
         case "addfood":
             healthExpanded = false
-            showAddFood = true
+            addFoodMeal = .breakfast
         case "weight":
             expandedMeals = []
             healthExpanded = true
@@ -461,7 +496,16 @@ struct DiaryView: View {
                 Button("Save") { saveWeight() }
                     .buttonStyle(.borderedProminent)
             }
+            if todaysWeightEntry?.source == .healthKit {
+                Text("From HealthKit")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
+    }
+
+    private var isWeightInputDirty: Bool {
+        weightInput != lastLoadedWeightText
     }
 
     private func loadWeightInput() {
@@ -470,12 +514,14 @@ struct DiaryView: View {
         } else {
             weightInput = ""
         }
+        lastLoadedWeightText = weightInput
     }
 
     private func saveWeight() {
         defer { dismissKeyboard() }
         guard let lbs = Double(weightInput) else { return }
         GoalService.saveWeight(lbs, for: selectedDate, context: context)
+        loadWeightInput()
     }
 
     private func dismissKeyboard() {

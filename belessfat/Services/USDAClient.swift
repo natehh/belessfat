@@ -188,41 +188,24 @@ enum USDAClient {
             ?? parsedPortions.tablespoonGrams
             ?? parsedPortions.teaspoonGrams
             ?? 100
-        let nutrientsArePer100g = shouldTreatNutrientsAsPer100g(
-            dataType: usda.dataType,
-            servingGrams: servingGrams,
-            calories: calories
-        )
 
-        let caloriesPer100g: Double
-        let proteinPer100g: Double
-        let carbsPer100g: Double
-        let fatPer100g: Double
-        let caloriesPerServing: Double
-        let proteinPerServing: Double
-        let carbsPerServing: Double
-        let fatPerServing: Double
+        // FDC foodNutrients are always per 100 g / 100 ml for every data type, including
+        // Branded (USDA converts the label panel onto a 100-unit basis). Scale to the
+        // household serving; do not treat the raw values as "per labeled cup."
+        let servingFactor = servingGrams > 0 ? servingGrams / 100.0 : 1
+        let caloriesPer100g = calories
+        let proteinPer100g = protein
+        let carbsPer100g = carbs
+        let fatPer100g = fat
+        let caloriesPerServing = calories * servingFactor
+        let proteinPerServing = protein * servingFactor
+        let carbsPerServing = carbs * servingFactor
+        let fatPerServing = fat * servingFactor
 
-        if nutrientsArePer100g {
-            caloriesPer100g = calories
-            proteinPer100g = protein
-            carbsPer100g = carbs
-            fatPer100g = fat
-            let servingFactor = servingGrams / 100.0
-            caloriesPerServing = calories * servingFactor
-            proteinPerServing = protein * servingFactor
-            carbsPerServing = carbs * servingFactor
-            fatPerServing = fat * servingFactor
-        } else {
-            caloriesPerServing = calories
-            proteinPerServing = protein
-            carbsPerServing = carbs
-            fatPerServing = fat
-            let per100gFactor = servingGrams > 0 ? 100.0 / servingGrams : 1
-            caloriesPer100g = calories * per100gFactor
-            proteinPer100g = protein * per100gFactor
-            carbsPer100g = carbs * per100gFactor
-            fatPer100g = fat * per100gFactor
+        // Pure fat is ~9 kcal/g and ≤100 g of any macro per 100 g. Rows above that are
+        // corrupt FDC ingest (e.g. O Organics yogurt 2756031: 17300 kcal, serving 0.75 g).
+        if caloriesPer100g > 950 || proteinPer100g > 100 || carbsPer100g > 100 || fatPer100g > 100 {
+            return nil
         }
 
         let brand = usda.brandName ?? usda.brandOwner
@@ -252,22 +235,6 @@ enum USDAClient {
         )
     }
 
-    private static func isPer100gDataType(_ dataType: String?) -> Bool {
-        switch dataType {
-        case "Foundation", "SR Legacy", "Survey (FNDDS)": return true
-        default: return false
-        }
-    }
-
-    /// USDA search often returns per-100g nutrients even when `dataType` is missing or the serving is a small portion (e.g. 1 tbsp oil).
-    private static func shouldTreatNutrientsAsPer100g(dataType: String?, servingGrams: Double, calories: Double) -> Bool {
-        if isPer100gDataType(dataType) { return true }
-        guard servingGrams > 0, calories > 0, servingGrams < 100 else { return false }
-        // Pure fat is ~9 kcal/g; if reported calories exceed that for the serving weight, values are per 100g.
-        let maxKcalForServing = servingGrams * 9.5
-        return calories > maxKcalForServing
-    }
-
     private static func normalizeEnergy(_ value: Double, unit: String?) -> Double {
         let normalizedUnit = unit?.trimmingCharacters(in: .whitespaces).lowercased() ?? ""
         if normalizedUnit == "kj" || normalizedUnit.contains("kilojoule") {
@@ -280,7 +247,7 @@ enum USDAClient {
         guard size > 0 else { return 100 }
         switch unit?.trimmingCharacters(in: .whitespaces).lowercased() ?? "g" {
         case "g", "grm", "gram", "grams": return size
-        case "ml": return size
+        case "ml", "mlt", "milliliter", "milliliters": return size
         case "oz", "onz", "ounce", "ounces": return size * ServingConverter.gramsPerOunce
         default: return size
         }

@@ -245,10 +245,13 @@ struct CardioWorkoutDetailView: View {
     @State private var workoutEndAt = Date()
     @State private var treadmillSpeed = 3.5
     @State private var treadmillIncline = 0.0
+    @State private var poolLength: PoolLength = .yards25
+    @State private var swimSegments: [SwimSegmentDraft] = [SwimSegmentDraft()]
     @State private var syncToHealthKit = true
     @State private var isSaving = false
 
     private var isTreadmill: Bool { session.workoutType == .treadmill }
+    private var isSwimming: Bool { session.workoutType == .swimming }
 
     var body: some View {
         NavigationStack {
@@ -285,11 +288,15 @@ struct CardioWorkoutDetailView: View {
                     }
                 }
 
+                if isSwimming {
+                    SwimSegmentsEditor(poolLength: $poolLength, segments: $swimSegments)
+                }
+
                 WorkoutTimeSection(
                     workoutEndAt: $workoutEndAt,
                     durationMinutes: durationMinutes,
                     syncToHealthKit: syncToHealthKit,
-                    includesSteps: true
+                    includesSteps: session.workoutType.writesHealthKitSteps
                 )
 
                 Section("HealthKit") {
@@ -327,6 +334,9 @@ struct CardioWorkoutDetailView: View {
                 workoutEndAt = session.effectiveWorkoutEnd
                 treadmillSpeed = session.treadmillSpeedMph ?? 3.5
                 treadmillIncline = session.treadmillInclinePercent ?? 0
+                poolLength = session.poolLength
+                let existing = session.sortedSwimSegments.map { SwimSegmentDraft(stroke: $0.stroke, lengths: $0.lengths) }
+                swimSegments = existing.isEmpty ? [SwimSegmentDraft()] : existing
                 syncToHealthKit = session.syncToHealthKit
             }
         }
@@ -340,6 +350,10 @@ struct CardioWorkoutDetailView: View {
         if isTreadmill {
             session.treadmillSpeedMph = treadmillSpeed
             session.treadmillInclinePercent = treadmillIncline
+        }
+        if isSwimming {
+            session.poolLength = poolLength
+            WorkoutService.replaceSwimSegments(on: session, drafts: swimSegments, context: context)
         }
         WorkoutService.applyWorkoutEnd(workoutEndAt, to: session)
         try? context.save()

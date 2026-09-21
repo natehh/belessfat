@@ -144,6 +144,12 @@ struct WorkoutSessionRow: View {
                 if session.workoutType == .strength {
                     Label("\(session.setLogs.count) sets", systemImage: "number")
                 }
+                if session.workoutType == .swimming, session.swimTotalLengths > 0 {
+                    Label(
+                        "\(session.swimTotalLengths) lengths · \(session.poolLength.distanceLabel(lengths: session.swimTotalLengths))",
+                        systemImage: "figure.pool.swim"
+                    )
+                }
             }
             .font(.caption)
             .foregroundStyle(.secondary)

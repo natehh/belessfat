@@ -5,6 +5,8 @@ struct LogFoodPresentation: Identifiable {
     let id = UUID()
     let food: Food
     let defaultMeal: MealCategory
+    let quantity: Double
+    let unit: ServingUnitType
 }
 
 enum FoodSearchTab: String, CaseIterable, Identifiable {
@@ -25,16 +27,26 @@ enum FoodSearchTab: String, CaseIterable, Identifiable {
 
 struct FoodRowView: View {
     let food: Food
+    var loggingAmount: DiaryService.LoggedAmount? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(food.displayName)
             HStack(spacing: 6) {
-                Text(food.source.rawValue.uppercased())
-                if food.source == .custom, food.caloriesPerServing > 0 {
-                    Text("· \(Int(food.caloriesPerServing)) kcal · \(ServingConverter.servingLabel(for: .serving, food: food))")
-                } else if food.caloriesPer100g > 0 {
-                    Text("· \(Int(food.caloriesPer100g)) kcal/100g")
+                if let loggingAmount {
+                    let macros = food.macros(for: loggingAmount.quantity, unit: loggingAmount.unit)
+                    Text("\(Int(macros.calories)) cal")
+                    Text("· \(ServingConverter.compactAmountLabel(quantity: loggingAmount.quantity, unit: loggingAmount.unit, food: food))")
+                    if let brand = food.brand, !brand.isEmpty {
+                        Text("· \(brand)")
+                    }
+                } else {
+                    Text(food.source.rawValue.uppercased())
+                    if food.source == .custom, food.caloriesPerServing > 0 {
+                        Text("· \(Int(food.caloriesPerServing)) kcal · \(ServingConverter.servingLabel(for: .serving, food: food))")
+                    } else if food.caloriesPer100g > 0 {
+                        Text("· \(Int(food.caloriesPer100g)) kcal/100g")
+                    }
                 }
             }
             .font(.caption2)
@@ -72,6 +84,8 @@ struct FoodBrowserView: View {
     let onSelectFood: (Food) -> Void
     var onSelectRecipe: ((Recipe) -> Void)? = nil
     var onDeleteCustomFood: ((Food) -> Void)? = nil
+    var onQuickAddFood: ((Food) -> Void)? = nil
+    var justAddedFoodIDs: Set<UUID> = []
 
     @State private var remoteResults: [Food] = []
     @State private var isSearching = false
@@ -131,10 +145,15 @@ struct FoodBrowserView: View {
         }
     }
 
+    private var showsQuickAdd: Bool {
+        onQuickAddFood != nil && selectedTab != .all
+    }
+
     @ViewBuilder
     private var recentsContent: some View {
         let recent = filteredRecents()
         let frequent = filteredFrequent()
+        let amounts = DiaryService.lastLoggedAmounts(context: context)
         if recent.isEmpty && frequent.isEmpty {
             Text(query.isEmpty ? "Foods you log will appear here." : "No matching recents.")
                 .foregroundStyle(.secondary)
@@ -142,22 +161,18 @@ struct FoodBrowserView: View {
             if !recent.isEmpty {
                 Section("Recent") {
                     ForEach(recent, id: \.id) { food in
-                        Button { onSelectFood(food) } label: { FoodRowView(food: food) }
+                        foodLogRow(food, amount: DiaryService.loggingAmount(for: food, lastLogged: amounts))
                     }
                 }
             }
             if !frequent.isEmpty {
                 Section("Frequent") {
                     ForEach(frequent, id: \.food.id) { item in
-                        Button { onSelectFood(item.food) } label: {
-                            HStack {
-                                FoodRowView(food: item.food)
-                                Spacer()
-                                Text("\(item.count)×")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
+                        foodLogRow(
+                            item.food,
+                            amount: DiaryService.loggingAmount(for: item.food, lastLogged: amounts),
+                            accessory: "\(item.count)×"
+                        )
                     }
                 }
             }
@@ -168,6 +183,7 @@ struct FoodBrowserView: View {
     private var customContent: some View {
         let foods = FoodService.searchCustomFoods(query: query, context: context)
         let recipes = FoodService.searchRecipes(query: query, context: context)
+        let amounts = DiaryService.lastLoggedAmounts(context: context)
         if foods.isEmpty && recipes.isEmpty {
             Text(query.isEmpty ? "Create custom foods or recipes from the + menu." : "No matching custom foods or recipes.")
                 .foregroundStyle(.secondary)
@@ -186,7 +202,7 @@ struct FoodBrowserView: View {
             if !foods.isEmpty {
                 Section(foods.isEmpty || recipes.isEmpty ? "" : "Foods") {
                     ForEach(foods, id: \.id) { food in
-                        Button { onSelectFood(food) } label: { FoodRowView(food: food) }
+                        foodLogRow(food, amount: DiaryService.loggingAmount(for: food, lastLogged: amounts))
                             .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                                 if let onDeleteCustomFood {
                                     Button(role: .destructive) {
@@ -198,6 +214,44 @@ struct FoodBrowserView: View {
                             }
                     }
                 }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func foodLogRow(
+        _ food: Food,
+        amount: DiaryService.LoggedAmount,
+        accessory: String? = nil
+    ) -> some View {
+        HStack(spacing: 8) {
+            Button {
+                onSelectFood(food)
+            } label: {
+                HStack {
+                    FoodRowView(food: food, loggingAmount: showsQuickAdd ? amount : nil)
+                    Spacer(minLength: 0)
+                    if let accessory {
+                        Text(accessory)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if showsQuickAdd, let onQuickAddFood {
+                Button {
+                    onQuickAddFood(food)
+                } label: {
+                    Image(systemName: justAddedFoodIDs.contains(food.id) ? "checkmark.circle.fill" : "plus.circle")
+                        .font(.title2)
+                        .foregroundStyle(.tint)
+                        .symbolEffect(.bounce, value: justAddedFoodIDs.contains(food.id))
+                }
+                .buttonStyle(.borderless)
+                .accessibilityLabel("Quick add \(food.displayName)")
             }
         }
     }
@@ -286,6 +340,7 @@ struct FoodSearchView: View {
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
     let selectedDate: Date
+    let defaultMeal: MealCategory
 
     @State private var selectedTab: FoodSearchTab = .recents
     @State private var query = ""
@@ -299,6 +354,7 @@ struct FoodSearchView: View {
     @State private var scannedBarcode: String?
     @State private var customFoodToDelete: Food?
     @State private var recipeToLog: Recipe?
+    @State private var justAddedFoodIDs: Set<UUID> = []
 
     var body: some View {
         NavigationStack {
@@ -307,9 +363,11 @@ struct FoodSearchView: View {
                 query: $query,
                 onSelectFood: { food in presentLogFood(food) },
                 onSelectRecipe: { recipe in recipeToLog = recipe },
-                onDeleteCustomFood: { customFoodToDelete = $0 }
+                onDeleteCustomFood: { customFoodToDelete = $0 },
+                onQuickAddFood: { food in quickAdd(food) },
+                justAddedFoodIDs: justAddedFoodIDs
             )
-            .navigationTitle("Add Food")
+            .navigationTitle(defaultMeal.displayName)
             #if DEBUG
             .onAppear {
                 if AppStoreScreenshotSeeder.isEnabled {
@@ -349,21 +407,23 @@ struct FoodSearchView: View {
                 LogFoodSheet(
                     food: presentation.food,
                     defaultMeal: presentation.defaultMeal,
-                    date: selectedDate
+                    date: selectedDate,
+                    initialQuantity: presentation.quantity,
+                    initialUnit: presentation.unit
                 ) { dismiss() }
             }
             .sheet(isPresented: $showCustomFood) {
                 CustomFoodFormView(
                     barcode: nil,
                     selectedDate: selectedDate,
-                    defaultMeal: DiaryService.mostRecentMeal(context: context),
+                    defaultMeal: defaultMeal,
                     onDone: { dismiss() }
                 )
             }
             .sheet(isPresented: $showAIEstimate) {
                 AIFoodEstimateView(
                     selectedDate: selectedDate,
-                    defaultMeal: DiaryService.mostRecentMeal(context: context),
+                    defaultMeal: defaultMeal,
                     onDone: { dismiss() }
                 )
             }
@@ -371,6 +431,7 @@ struct FoodSearchView: View {
                 BarcodeScannerView(
                     selectedDate: selectedDate,
                     recipeMode: false,
+                    defaultMeal: defaultMeal,
                     onFoodPrepared: nil
                 ) { dismiss() }
             }
@@ -378,20 +439,20 @@ struct FoodSearchView: View {
                 LabelCaptureView(
                     barcode: scannedBarcode,
                     selectedDate: selectedDate,
-                    defaultMeal: DiaryService.mostRecentMeal(context: context)
+                    defaultMeal: defaultMeal
                 ) { dismiss() }
             }
             .sheet(isPresented: $showRecipes) {
                 RecipeListView(
                     selectedDate: selectedDate,
-                    defaultMeal: DiaryService.mostRecentMeal(context: context)
+                    defaultMeal: defaultMeal
                 ) { dismiss() }
             }
             .sheet(item: $recipeToLog) { recipe in
                 NavigationStack {
                     LogRecipeView(
                         recipe: recipe,
-                        defaultMeal: DiaryService.mostRecentMeal(context: context),
+                        defaultMeal: defaultMeal,
                         date: selectedDate
                     ) { dismiss() }
                 }
@@ -426,10 +487,35 @@ struct FoodSearchView: View {
             isPreparingFood = true
             let prepared = await FoodService.prepareForLogging(food, context: context)
             isPreparingFood = false
+            let amount = DiaryService.loggingAmount(for: prepared, context: context)
             logFoodPresentation = LogFoodPresentation(
                 food: prepared,
-                defaultMeal: DiaryService.mostRecentMeal(context: context)
+                defaultMeal: defaultMeal,
+                quantity: amount.quantity,
+                unit: amount.unit
             )
+        }
+    }
+
+    private func quickAdd(_ food: Food) {
+        withAnimation {
+            justAddedFoodIDs.insert(food.id)
+        }
+        Task { @MainActor in
+            let prepared = await FoodService.prepareForLogging(food, context: context)
+            let amount = DiaryService.loggingAmount(for: prepared, context: context)
+            DiaryService.addEntry(
+                food: prepared,
+                quantity: amount.quantity,
+                unit: amount.unit,
+                meal: defaultMeal,
+                date: selectedDate,
+                context: context
+            )
+            try? await Task.sleep(for: .milliseconds(1400))
+            withAnimation {
+                justAddedFoodIDs.remove(food.id)
+            }
         }
     }
 }
@@ -445,39 +531,23 @@ struct LogFoodSheet: View {
     @State private var unit: ServingUnitType
     @State private var meal: MealCategory
 
-    init(food: Food, defaultMeal: MealCategory, date: Date, onDone: @escaping () -> Void) {
+    init(
+        food: Food,
+        defaultMeal: MealCategory,
+        date: Date,
+        initialQuantity: Double? = nil,
+        initialUnit: ServingUnitType? = nil,
+        onDone: @escaping () -> Void
+    ) {
         self.food = food
         self.date = date
         self.onDone = onDone
         _meal = State(initialValue: defaultMeal)
 
-        let available = food.availableServingUnits
-        let defaultUnit: ServingUnitType
-        if food.source == .usda, available.contains(.grams) {
-            defaultUnit = .grams
-        } else if available.contains(.tablespoon) {
-            defaultUnit = .tablespoon
-        } else if available.contains(.teaspoon) {
-            defaultUnit = .teaspoon
-        } else if available.contains(.medium) {
-            defaultUnit = .medium
-        } else if available.contains(.serving) {
-            defaultUnit = .serving
-        } else if available.contains(.cup) {
-            defaultUnit = .cup
-        } else {
-            defaultUnit = available.first ?? .grams
-        }
-
-        let defaultQuantity: Double
-        switch defaultUnit {
-        case .grams: defaultQuantity = 100
-        case .teaspoon, .tablespoon, .cup, .serving, .small, .medium, .large: defaultQuantity = 1
-        default: defaultQuantity = 1
-        }
-
-        _unit = State(initialValue: defaultUnit)
-        _quantity = State(initialValue: defaultQuantity)
+        let fallback = food.defaultLoggingAmount()
+        let unit = initialUnit.flatMap { food.availableServingUnits.contains($0) ? $0 : nil } ?? fallback.unit
+        _unit = State(initialValue: unit)
+        _quantity = State(initialValue: initialQuantity ?? fallback.quantity)
     }
 
     private var quantityRange: ClosedRange<Double> {

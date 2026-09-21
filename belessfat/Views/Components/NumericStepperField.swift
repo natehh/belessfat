@@ -42,6 +42,7 @@ struct NumericStepperField: View {
             text = formatted(newValue)
         }
         .onDisappear {
+            guard isEditing else { return }
             commitText()
         }
     }

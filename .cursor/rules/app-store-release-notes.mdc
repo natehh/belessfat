@@ -1,0 +1,13 @@
+---
+description: Merge-to-release commit body is the App Store What's New text
+alwaysApply: true
+---
+
+# App Store release notes
+
+When merging `dev` into `release`, write the merge commit **body** as App Store "What's New" (see `AGENTS.md`).
+
+- User-visible bullets only (features, fixes, behavior)
+- No files, types, PRs, SHAs, or "refactor" talk
+- 2–8 short lines, under 4000 characters
+- CI uploads that body as the store description
