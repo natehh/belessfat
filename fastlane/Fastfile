@@ -128,17 +128,54 @@ platform :ios do
   end
 
   def next_build_number(api_key:)
-    live = begin
-      app_store_build_number(api_key: api_key, live: true, app_identifier: "com.belessfat.app").to_i
-    rescue StandardError
-      0
+    version = get_version_number(xcodeproj: "belessfat.xcodeproj", target: "belessfat")
+    candidates = {
+      "local" => get_build_number(xcodeproj: "belessfat.xcodeproj").to_i
+    }
+
+    begin
+      candidates["live"] = app_store_build_number(
+        api_key: api_key,
+        live: true,
+        app_identifier: "com.belessfat.app"
+      ).to_i
+    rescue StandardError => e
+      UI.important("live build number unavailable: #{e.message}")
     end
-    testflight = begin
-      latest_testflight_build_number(api_key: api_key, app_identifier: "com.belessfat.app").to_i
-    rescue StandardError
-      0
+
+    begin
+      candidates["edit"] = app_store_build_number(
+        api_key: api_key,
+        live: false,
+        version: version,
+        app_identifier: "com.belessfat.app"
+      ).to_i
+    rescue StandardError => e
+      UI.important("edit-version build number unavailable: #{e.message}")
     end
-    [live, testflight, get_build_number(xcodeproj: "belessfat.xcodeproj").to_i].max + 1
+
+    begin
+      candidates["testflight"] = latest_testflight_build_number(
+        api_key: api_key,
+        app_identifier: "com.belessfat.app"
+      ).to_i
+    rescue StandardError => e
+      UI.important("TestFlight build number unavailable: #{e.message}")
+    end
+
+    begin
+      app = Spaceship::ConnectAPI::App.find("com.belessfat.app")
+      if app
+        uploaded = app.get_builds(limit: 50).map { |build| build.version.to_i }.max || 0
+        candidates["uploaded"] = uploaded
+      end
+    rescue StandardError => e
+      UI.important("uploaded builds unavailable: #{e.message}")
+    end
+
+    highest = candidates.values.max
+    UI.message("Build number candidates: #{candidates.inspect}; using #{highest + 1}")
+    highest + 1
   end
 
   def app_store_whats_new
