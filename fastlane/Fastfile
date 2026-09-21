@@ -158,7 +158,7 @@ platform :ios do
     UI.user_error!("No editable App Store version to attach What's New.") if version.nil?
     version.get_app_store_version_localizations.each do |localization|
       next unless localization.locale.to_s.start_with?("en")
-      localization.update(whats_new: notes)
+      localization.update(attributes: { whatsNew: notes })
     end
   end
 
