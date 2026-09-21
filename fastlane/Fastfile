@@ -93,6 +93,7 @@ platform :ios do
     )
 
     write_whats_new(notes)
+    wait_for_uploaded_build(version: version, build: build)
 
     upload_to_app_store(
       api_key: api_key,
@@ -187,6 +188,20 @@ platform :ios do
     UI.user_error!("The merge commit has no What's New body. Put App Store release notes in the merge commit message (see AGENTS.md).") if notes.empty?
     UI.user_error!("What's New is #{notes.length} characters; App Store limit is 4000.") if notes.length > 4000
     notes
+  end
+
+  def wait_for_uploaded_build(version:, build:)
+    app = Spaceship::ConnectAPI::App.find("com.belessfat.app")
+    UI.user_error!("Could not find com.belessfat.app in App Store Connect") if app.nil?
+    UI.message("Waiting for App Store Connect to finish processing #{version} (#{build})")
+    FastlaneCore::BuildWatcher.wait_for_build_processing_to_be_complete(
+      app_id: app.id,
+      platform: Spaceship::ConnectAPI::Platform::IOS,
+      app_version: version,
+      build_version: build.to_s,
+      poll_interval: 30,
+      return_spaceship_testflight_build: false
+    )
   end
 
   def write_whats_new(notes)
