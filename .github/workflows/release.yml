@@ -52,7 +52,8 @@ jobs:
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: "3.3"
+          # CFPropertyList 3.0.9 (locked by fastlane) rejects Ruby 3.2+.
+          ruby-version: "3.1"
           bundler: "2.5.23"
           bundler-cache: true
 
