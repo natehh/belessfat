@@ -11,7 +11,7 @@ struct AddWorkoutSheet: View {
 
     @State private var workoutType: WorkoutType = .strength
     @State private var selectedTemplate: WorkoutTemplate?
-    @State private var useEmptySession = true
+    @State private var useEmptySession = false
     @State private var syncToHealthKit = true
     @State private var durationMinutes = 45.0
     @State private var workoutEndAt = Date()
@@ -80,6 +80,9 @@ struct AddWorkoutSheet: View {
             }
             .onAppear {
                 workoutEndAt = WorkoutService.defaultWorkoutEnd(for: date)
+                if selectedTemplate == nil {
+                    selectedTemplate = templates.first
+                }
             }
         }
     }

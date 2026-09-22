@@ -6,6 +6,7 @@ struct DiaryView: View {
     @Environment(\.modelContext) private var context
     @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject private var healthKit: HealthKitService
+    @EnvironmentObject private var quickActions: QuickActionRouter
     @Query(sort: \UserSettings.id) private var settingsQuery: [UserSettings]
     @Query(sort: \LogEntry.createdAt) private var allLogEntries: [LogEntry]
     @Query(sort: \DailyHealthSnapshot.date, order: .reverse) private var healthSnapshots: [DailyHealthSnapshot]
@@ -17,6 +18,7 @@ struct DiaryView: View {
     @State private var showQuickActions = false
     @State private var showFavorites = false
     @State private var showProgressPhotoCapture = false
+    @State private var showWeightGoal = false
     @State private var recipeFromMeal: Recipe?
     @State private var expandedMeals: Set<MealCategory> = Set(MealCategory.allCases)
     @State private var healthExpanded = true
@@ -178,7 +180,12 @@ struct DiaryView: View {
                                 entries: weightEntries,
                                 asOf: selectedDate
                             )
-                            GoalProgressCard(goal: goal, metrics: metrics, currentWeight: current)
+                            GoalProgressCard(
+                                goal: goal,
+                                metrics: metrics,
+                                currentWeight: current,
+                                onEdit: { showWeightGoal = true }
+                            )
                                 .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                                 .id("weightGoalCard")
                         }
@@ -371,6 +378,9 @@ struct DiaryView: View {
             .sheet(isPresented: $showProgressPhotoCapture) {
                 DiaryProgressPhotoCapture(date: selectedDate)
             }
+            .sheet(isPresented: $showWeightGoal) {
+                WeightGoalSettingsView(existingGoal: weightGoal)
+            }
             .sheet(item: $recipeFromMeal) { recipe in
                 RecipeEditorView(existingRecipe: recipe)
             }
@@ -383,6 +393,7 @@ struct DiaryView: View {
                 Button("Cancel", role: .cancel) {}
             }
             .onAppear {
+                consumeQuickAction()
                 loadWeightInput()
                 #if DEBUG
                 if AppStoreScreenshotSeeder.isEnabled {
@@ -392,6 +403,10 @@ struct DiaryView: View {
                 healthKit.refreshAuthorizationStatus()
                 healthKit.startObservingWeight(context: context)
                 Task { await healthKit.sync(for: selectedDate, context: context) }
+            }
+            .onChange(of: quickActions.pendingMeal) { _, meal in
+                guard meal != nil else { return }
+                consumeQuickAction()
             }
             .onChange(of: selectedDate) { _, newDate in
                 loadWeightInput()
@@ -457,6 +472,13 @@ struct DiaryView: View {
         }
         #endif
         return true
+    }
+
+    private func consumeQuickAction() {
+        guard let meal = quickActions.pendingMeal else { return }
+        selectedDate = Date()
+        addFoodMeal = meal
+        quickActions.pendingMeal = nil
     }
 
     private func shiftDay(by offset: Int) {

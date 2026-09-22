@@ -258,6 +258,19 @@ enum ServingConverter {
         }
         return "\(qty) \(unit.displayName)"
     }
+
+    static func compactAmountLabel(quantity: Double, unit: ServingUnitType, recipe: Recipe) -> String {
+        let qty: String
+        if unit == .grams || abs(quantity - quantity.rounded()) < 0.001 {
+            qty = String(Int(quantity.rounded()))
+        } else {
+            qty = String(format: "%g", quantity)
+        }
+        if unit == .serving {
+            return abs(quantity - 1) < 0.001 ? "1 serving" : "\(qty) servings"
+        }
+        return "\(qty) \(unit.displayName)"
+    }
 }
 
 enum MacroCalculator {

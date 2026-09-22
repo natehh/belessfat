@@ -18,6 +18,20 @@ enum MealCategory: String, Codable, CaseIterable, Identifiable {
         case .uncategorized: return "Uncategorized"
         }
     }
+
+    static var loggingCases: [MealCategory] {
+        [.breakfast, .lunch, .dinner, .snacks]
+    }
+
+    var shortcutType: String {
+        "com.belessfat.app.log.\(rawValue)"
+    }
+
+    init?(shortcutType: String) {
+        let prefix = "com.belessfat.app.log."
+        guard shortcutType.hasPrefix(prefix) else { return nil }
+        self.init(rawValue: String(shortcutType.dropFirst(prefix.count)))
+    }
 }
 
 enum FoodSource: String, Codable {

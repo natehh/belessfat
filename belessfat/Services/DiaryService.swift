@@ -184,17 +184,57 @@ enum DiaryService {
         return copy
     }
 
-    static func frequentFoods(context: ModelContext, limit: Int = 20) -> [(food: Food, count: Int)] {
+    enum RecentItem: Identifiable {
+        case food(Food)
+        case recipe(Recipe)
+
+        var id: UUID {
+            switch self {
+            case .food(let food): return food.id
+            case .recipe(let recipe): return recipe.id
+            }
+        }
+
+        var name: String {
+            switch self {
+            case .food(let food): return food.displayName
+            case .recipe(let recipe): return recipe.name
+            }
+        }
+
+        var brand: String? {
+            switch self {
+            case .food(let food): return food.brand
+            case .recipe: return nil
+            }
+        }
+
+        init?(entry: LogEntry, includeRecipes: Bool) {
+            if includeRecipes, let recipe = entry.recipe {
+                self = .recipe(recipe)
+            } else if let food = entry.food {
+                self = .food(food)
+            } else {
+                return nil
+            }
+        }
+    }
+
+    static func frequentItems(
+        context: ModelContext,
+        limit: Int = 20,
+        includeRecipes: Bool = true
+    ) -> [(item: RecentItem, count: Int)] {
         let thirtyDaysAgo = Calendar.current.date(byAdding: .day, value: -30, to: Date())!
         let descriptor = FetchDescriptor<LogEntry>(
             predicate: #Predicate { $0.date >= thirtyDaysAgo }
         )
         let entries = (try? context.fetch(descriptor)) ?? []
-        var counts: [UUID: (Food, Int)] = [:]
+        var counts: [UUID: (RecentItem, Int)] = [:]
         for entry in entries {
-            guard let food = entry.food else { continue }
-            let current = counts[food.id]?.1 ?? 0
-            counts[food.id] = (food, current + 1)
+            guard let item = RecentItem(entry: entry, includeRecipes: includeRecipes) else { continue }
+            let current = counts[item.id]?.1 ?? 0
+            counts[item.id] = (item, current + 1)
         }
         return counts.values
             .sorted { $0.1 > $1.1 }
@@ -202,25 +242,31 @@ enum DiaryService {
             .map { ($0.0, $0.1) }
     }
 
-    static func recentFoods(context: ModelContext, limit: Int = 20) -> [Food] {
+    static func recentItems(
+        context: ModelContext,
+        limit: Int = 20,
+        includeRecipes: Bool = true
+    ) -> [RecentItem] {
         let descriptor = FetchDescriptor<LogEntry>(
             sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
         )
         let entries = (try? context.fetch(descriptor)) ?? []
         var seen = Set<UUID>()
-        var foods: [Food] = []
+        var items: [RecentItem] = []
         for entry in entries {
-            guard let food = entry.food, !seen.contains(food.id) else { continue }
-            seen.insert(food.id)
-            foods.append(food)
-            if foods.count >= limit { break }
+            guard let item = RecentItem(entry: entry, includeRecipes: includeRecipes),
+                  !seen.contains(item.id) else { continue }
+            seen.insert(item.id)
+            items.append(item)
+            if items.count >= limit { break }
         }
-        return foods
+        return items
     }
 
     struct LoggedAmount {
         var quantity: Double
         var unit: ServingUnitType
+        var recipeOverrides: [UUID: (quantity: Double, unit: ServingUnitType)] = [:]
     }
 
     static func lastLoggedAmounts(context: ModelContext) -> [UUID: LoggedAmount] {
@@ -230,8 +276,24 @@ enum DiaryService {
         let entries = (try? context.fetch(descriptor)) ?? []
         var result: [UUID: LoggedAmount] = [:]
         for entry in entries {
-            guard let id = entry.food?.id, result[id] == nil else { continue }
-            result[id] = LoggedAmount(quantity: entry.quantity, unit: entry.servingUnit)
+            let id: UUID?
+            let overrides: [UUID: (quantity: Double, unit: ServingUnitType)]
+            if let recipe = entry.recipe {
+                id = recipe.id
+                overrides = entry.recipeOverrideMap
+            } else if let food = entry.food {
+                id = food.id
+                overrides = [:]
+            } else {
+                id = nil
+                overrides = [:]
+            }
+            guard let id, result[id] == nil else { continue }
+            result[id] = LoggedAmount(
+                quantity: entry.quantity,
+                unit: entry.servingUnit,
+                recipeOverrides: overrides
+            )
         }
         return result
     }
@@ -243,6 +305,15 @@ enum DiaryService {
         }
         let fallback = food.defaultLoggingAmount()
         return LoggedAmount(quantity: fallback.quantity, unit: fallback.unit)
+    }
+
+    static func loggingAmount(for recipe: Recipe, lastLogged: [UUID: LoggedAmount]? = nil, context: ModelContext? = nil) -> LoggedAmount {
+        let amounts = lastLogged ?? context.map { lastLoggedAmounts(context: $0) } ?? [:]
+        let units = recipe.availableServingUnits()
+        if let last = amounts[recipe.id], units.contains(last.unit) {
+            return last
+        }
+        return LoggedAmount(quantity: 1, unit: .serving)
     }
 
     static func mostRecentMeal(context: ModelContext) -> MealCategory {

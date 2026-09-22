@@ -219,11 +219,19 @@ struct GoalProgressCard: View {
     let goal: WeightGoal
     let metrics: GoalMetrics
     let currentWeight: Double
+    var onEdit: (() -> Void)? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Weight Goal")
-                .font(.headline)
+            HStack {
+                Text("Weight Goal")
+                    .font(.headline)
+                Spacer()
+                if let onEdit {
+                    Button("Edit", action: onEdit)
+                        .font(.subheadline)
+                }
+            }
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Weight progress")

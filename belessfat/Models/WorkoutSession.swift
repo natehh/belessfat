@@ -103,6 +103,7 @@ final class WorkoutSetLog {
     var reps: Int
     var weightLbs: Double?
     var isWarmup: Bool
+    var notes: String?
     var snapshotExerciseName: String?
     var session: WorkoutSession?
 
@@ -112,7 +113,8 @@ final class WorkoutSetLog {
         setIndex: Int,
         reps: Int,
         weightLbs: Double? = nil,
-        isWarmup: Bool = false
+        isWarmup: Bool = false,
+        notes: String? = nil
     ) {
         self.id = UUID()
         self.exercise = exercise
@@ -121,9 +123,19 @@ final class WorkoutSetLog {
         self.reps = reps
         self.weightLbs = weightLbs
         self.isWarmup = isWarmup
+        self.notes = Self.normalizedNotes(notes)
         if let exercise {
             self.snapshotExerciseName = exercise.name
         }
+    }
+
+    var hasNotes: Bool {
+        !(notes?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+    }
+
+    static func normalizedNotes(_ notes: String?) -> String? {
+        let trimmed = notes?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     var displayExerciseName: String {

@@ -1402,13 +1402,23 @@ struct LogRecipeView: View {
     @State private var meal: MealCategory
     @State private var adjustableDrafts: [AdjustableIngredientDraft] = []
 
-    init(recipe: Recipe, defaultMeal: MealCategory, date: Date, onDone: @escaping () -> Void) {
+    init(
+        recipe: Recipe,
+        defaultMeal: MealCategory,
+        date: Date,
+        initialQuantity: Double? = nil,
+        initialUnit: ServingUnitType? = nil,
+        initialOverrides: [UUID: (quantity: Double, unit: ServingUnitType)] = [:],
+        onDone: @escaping () -> Void
+    ) {
         self.recipe = recipe
         self.date = date
         self.onDone = onDone
         _meal = State(initialValue: defaultMeal)
-        _unit = State(initialValue: .serving)
-        _quantity = State(initialValue: 1)
+        let unit = initialUnit.flatMap { recipe.availableServingUnits(overrides: initialOverrides).contains($0) ? $0 : nil } ?? .serving
+        _unit = State(initialValue: unit)
+        _quantity = State(initialValue: initialQuantity ?? 1)
+        _adjustableDrafts = State(initialValue: AdjustableIngredientDraft.drafts(from: recipe, stored: initialOverrides))
     }
 
     private var overrides: [UUID: (quantity: Double, unit: ServingUnitType)] {

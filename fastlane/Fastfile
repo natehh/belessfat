@@ -89,7 +89,7 @@ platform :ios do
       skip_metadata: true,
       precheck_include_in_app_purchases: false,
       submit_for_review: false,
-      automatic_release: false
+      automatic_release: true
     )
 
     write_whats_new(notes)
@@ -106,7 +106,7 @@ platform :ios do
       skip_metadata: true,
       precheck_include_in_app_purchases: false,
       submit_for_review: true,
-      automatic_release: false,
+      automatic_release: true,
       submission_information: {
         add_id_info_uses_idfa: false,
         export_compliance_uses_encryption: false,
