@@ -1,7 +1,8 @@
 name: App Store release
 
 # Merge into `release` archives, uploads, creates/updates the App Store
-# version, and submits for review. What's New is the merge commit body.
+# version, and submits for review. Apple releases it after approval.
+# What's New is the merge commit body.
 on:
   push:
     branches:
