@@ -3,6 +3,7 @@ import SwiftUI
 struct FoodTabShell: View {
     @Environment(\.modelContext) private var context
     @EnvironmentObject private var healthKit: HealthKitService
+    @EnvironmentObject private var quickActions: QuickActionRouter
     @State private var selectedTab = 0
 
     var body: some View {
@@ -21,6 +22,9 @@ struct FoodTabShell: View {
                 .tag(3)
         }
         .onAppear {
+            if quickActions.pendingMeal != nil {
+                selectedTab = 0
+            }
             #if DEBUG
             if AppStoreScreenshotSeeder.isEnabled {
                 switch AppStoreScreenshotSeeder.requestedScreen {
@@ -38,6 +42,10 @@ struct FoodTabShell: View {
             if AppStoreScreenshotSeeder.isEnabled { return }
             #endif
             Task { await healthKit.sync(for: Date(), context: context) }
+        }
+        .onChange(of: quickActions.pendingMeal) { _, meal in
+            guard meal != nil else { return }
+            selectedTab = 0
         }
     }
 }
@@ -62,6 +70,7 @@ struct WorkoutTabShell: View {
 
 struct ContentView: View {
     @Environment(\.modelContext) private var context
+    @EnvironmentObject private var quickActions: QuickActionRouter
     @AppStorage("appSection") private var appSectionRaw = AppSection.food.rawValue
     #if DEBUG
     @State private var showScreenshotAI = false
@@ -94,7 +103,14 @@ struct ContentView: View {
                 WorkoutTabShell()
             }
         }
+        .onChange(of: quickActions.pendingMeal) { _, meal in
+            guard meal != nil else { return }
+            appSectionRaw = AppSection.food.rawValue
+        }
         .onAppear {
+            if quickActions.pendingMeal != nil {
+                appSectionRaw = AppSection.food.rawValue
+            }
             #if DEBUG
             AppStoreScreenshotSeeder.seedIfNeeded(context: context)
             if AppStoreScreenshotSeeder.isEnabled {

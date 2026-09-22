@@ -30,6 +30,41 @@
 	<string>belessfat uses HealthKit to optionally write workout calories and estimated steps to Apple Health.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>belessfat needs photo access to read nutrition labels from images.</string>
+	<key>UIApplicationShortcutItems</key>
+	<array>
+		<dict>
+			<key>UIApplicationShortcutItemType</key>
+			<string>com.belessfat.app.log.breakfast</string>
+			<key>UIApplicationShortcutItemTitle</key>
+			<string>Log Breakfast</string>
+			<key>UIApplicationShortcutItemIconSymbolName</key>
+			<string>sunrise.fill</string>
+		</dict>
+		<dict>
+			<key>UIApplicationShortcutItemType</key>
+			<string>com.belessfat.app.log.lunch</string>
+			<key>UIApplicationShortcutItemTitle</key>
+			<string>Log Lunch</string>
+			<key>UIApplicationShortcutItemIconSymbolName</key>
+			<string>sun.max.fill</string>
+		</dict>
+		<dict>
+			<key>UIApplicationShortcutItemType</key>
+			<string>com.belessfat.app.log.dinner</string>
+			<key>UIApplicationShortcutItemTitle</key>
+			<string>Log Dinner</string>
+			<key>UIApplicationShortcutItemIconSymbolName</key>
+			<string>sunset.fill</string>
+		</dict>
+		<dict>
+			<key>UIApplicationShortcutItemType</key>
+			<string>com.belessfat.app.log.snacks</string>
+			<key>UIApplicationShortcutItemTitle</key>
+			<string>Log Snacks</string>
+			<key>UIApplicationShortcutItemIconSymbolName</key>
+			<string>carrot.fill</string>
+		</dict>
+	</array>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

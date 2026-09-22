@@ -153,16 +153,16 @@ struct StrengthWorkoutLogView: View {
     private func addSet(for group: ExerciseGroup) {
         guard let exercise = group.exercise else { return }
         let nextIndex = (group.sets.map(\.setIndex).max() ?? -1) + 1
-        let lastWeight = group.sets.last?.weightLbs
-        let lastReps = group.sets.last?.reps ?? 8
+        let last = group.sets.last
         WorkoutService.addSetLog(
             to: session,
             exercise: exercise,
             exerciseSortOrder: group.sortOrder,
             setIndex: nextIndex,
-            reps: lastReps,
-            weightLbs: lastWeight,
+            reps: last?.reps ?? 8,
+            weightLbs: last?.weightLbs,
             isWarmup: false,
+            notes: last?.notes,
             context: context
         )
     }
@@ -203,6 +203,8 @@ struct SetLogRow: View {
     @Bindable var setLog: WorkoutSetLog
     @State private var repsText = ""
     @State private var weightText = ""
+    @State private var showNotes = false
+    @State private var notesDraft = ""
 
     var body: some View {
         HStack {
@@ -230,6 +232,47 @@ struct SetLogRow: View {
                 .labelsHidden()
                 .toggleStyle(.button)
                 .tint(setLog.isWarmup ? .orange : .secondary)
+            Button {
+                notesDraft = setLog.notes ?? ""
+                showNotes = true
+            } label: {
+                ZStack(alignment: .topTrailing) {
+                    Image(systemName: "note.text")
+                        .font(.body)
+                    if setLog.hasNotes {
+                        Circle()
+                            .fill(Color.accentColor)
+                            .frame(width: 7, height: 7)
+                            .offset(x: 2, y: -2)
+                    }
+                }
+                .foregroundStyle(setLog.hasNotes ? Color.accentColor : Color.secondary)
+                .frame(width: 28, height: 28)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.borderless)
+            .accessibilityLabel(setLog.hasNotes ? "Edit set notes" : "Add set notes")
+        }
+        .sheet(isPresented: $showNotes) {
+            NavigationStack {
+                TextField("Notes for this set", text: $notesDraft, axis: .vertical)
+                    .lineLimit(5...12)
+                    .padding()
+                    .navigationTitle("Set \(setLog.setIndex + 1) Notes")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Cancel") { showNotes = false }
+                        }
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Done") {
+                                setLog.notes = WorkoutSetLog.normalizedNotes(notesDraft)
+                                showNotes = false
+                            }
+                        }
+                    }
+            }
+            .presentationDetents([.medium])
         }
     }
 }

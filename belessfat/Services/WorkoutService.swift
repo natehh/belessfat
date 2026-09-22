@@ -395,6 +395,7 @@ enum WorkoutService {
                         reps: 0,
                         weightLbs: nil,
                         isWarmup: false,
+                        notes: nil,
                         context: context
                     )
                 } else {
@@ -407,6 +408,7 @@ enum WorkoutService {
                             reps: log.reps,
                             weightLbs: log.weightLbs,
                             isWarmup: log.isWarmup,
+                            notes: log.notes,
                             context: context
                         )
                     }
@@ -423,6 +425,7 @@ enum WorkoutService {
                     reps: 0,
                     weightLbs: nil,
                     isWarmup: false,
+                    notes: nil,
                     context: context
                 )
             }
@@ -445,6 +448,7 @@ enum WorkoutService {
         reps: Int,
         weightLbs: Double?,
         isWarmup: Bool,
+        notes: String? = nil,
         context: ModelContext
     ) {
         let log = WorkoutSetLog(
@@ -453,7 +457,8 @@ enum WorkoutService {
             setIndex: setIndex,
             reps: reps,
             weightLbs: weightLbs,
-            isWarmup: isWarmup
+            isWarmup: isWarmup,
+            notes: notes
         )
         log.session = session
         session.setLogs.append(log)

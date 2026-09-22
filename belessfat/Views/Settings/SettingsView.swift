@@ -1,6 +1,13 @@
 import SwiftUI
 import SwiftData
 
+private enum WeightGoalEditorMode: String, Identifiable {
+    case edit
+    case configure
+
+    var id: String { rawValue }
+}
+
 struct SettingsView: View {
     @Environment(\.modelContext) private var context
     @EnvironmentObject private var healthKit: HealthKitService
@@ -9,7 +16,7 @@ struct SettingsView: View {
     @AppStorage("appearanceMode") private var appearanceMode = "system"
     @AppStorage(ServingConverter.preferredWeightUnitStorageKey) private var preferredWeightUnit = ServingUnitType.ounces.rawValue
 
-    @State private var showWeightGoal = false
+    @State private var weightGoalEditor: WeightGoalEditorMode?
     @State private var showTemplates = false
     @State private var showFavorites = false
     @State private var showImport = false
@@ -28,7 +35,7 @@ struct SettingsView: View {
                         activeWeightGoal: activeWeightGoal,
                         appearanceMode: $appearanceMode,
                         preferredWeightUnit: $preferredWeightUnit,
-                        showWeightGoal: $showWeightGoal,
+                        weightGoalEditor: $weightGoalEditor,
                         showTemplates: $showTemplates,
                         showFavorites: $showFavorites,
                         showImport: $showImport,
@@ -40,7 +47,14 @@ struct SettingsView: View {
                 }
             }
             .navigationTitle("Settings")
-            .sheet(isPresented: $showWeightGoal) { WeightGoalSettingsView() }
+            .sheet(item: $weightGoalEditor) { mode in
+                switch mode {
+                case .edit:
+                    WeightGoalSettingsView(existingGoal: activeWeightGoal)
+                case .configure:
+                    WeightGoalSettingsView(replacesExisting: activeWeightGoal != nil)
+                }
+            }
             .sheet(isPresented: $showTemplates) { TemplatesListView() }
             .sheet(isPresented: $showFavorites) { FavoritesListView() }
             .sheet(isPresented: $showImport) { CSVImportView() }
@@ -74,7 +88,7 @@ private struct SettingsFormContent: View {
     let activeWeightGoal: WeightGoal?
     @Binding var appearanceMode: String
     @Binding var preferredWeightUnit: String
-    @Binding var showWeightGoal: Bool
+    @Binding var weightGoalEditor: WeightGoalEditorMode?
     @Binding var showTemplates: Bool
     @Binding var showFavorites: Bool
     @Binding var showImport: Bool
@@ -199,11 +213,17 @@ private struct SettingsFormContent: View {
             }
 
             Section("Weight Goal") {
-                Button("Configure Weight Goal") { showWeightGoal = true }
+                if activeWeightGoal != nil {
+                    Button("Edit Weight Goal") { weightGoalEditor = .edit }
+                    Button("Configure Weight Goal") { weightGoalEditor = .configure }
+                } else {
+                    Button("Configure Weight Goal") { weightGoalEditor = .configure }
+                }
                 if let goal = activeWeightGoal {
                     LabeledContent("Type", value: goal.goalType.displayName)
                     LabeledContent("Start", value: "\(goal.startWeightLbs.formatted()) lbs")
                     LabeledContent("Goal", value: "\(goal.goalWeightLbs.formatted()) lbs")
+                    LabeledContent("Started", value: goal.startDate.formatted(date: .abbreviated, time: .omitted))
                     LabeledContent("Target Date", value: goal.targetDate.formatted(date: .abbreviated, time: .omitted))
                 }
                 NavigationLink("Progress Photos") {
@@ -407,6 +427,8 @@ private struct SettingsFormContent: View {
 struct WeightGoalSettingsView: View {
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
+    var existingGoal: WeightGoal?
+    var replacesExisting: Bool = false
 
     @State private var goalType: GoalType = .lose
     @State private var startWeight = ""
@@ -444,7 +466,7 @@ struct WeightGoalSettingsView: View {
                         .foregroundStyle(.red)
                 }
             }
-            .navigationTitle("Weight Goal")
+            .navigationTitle(existingGoal == nil ? "Configure Weight Goal" : "Edit Weight Goal")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
@@ -456,8 +478,8 @@ struct WeightGoalSettingsView: View {
     }
 
     private func loadExisting() {
-        let all = (try? context.fetch(FetchDescriptor<WeightGoal>())) ?? []
-        guard let existing = all.first(where: \.isActive) ?? all.first else { return }
+        guard !replacesExisting else { return }
+        guard let existing = existingGoal ?? GoalService.activeGoal(context: context) else { return }
         goalType = existing.goalType
         startWeight = formatWeight(existing.startWeightLbs)
         goalWeight = formatWeight(existing.goalWeightLbs)
@@ -475,18 +497,27 @@ struct WeightGoalSettingsView: View {
             return
         }
 
-        let all = (try? context.fetch(FetchDescriptor<WeightGoal>())) ?? []
-        for old in all {
-            context.delete(old)
+        let startDay = Calendar.current.startOfDay(for: startDate)
+        if !replacesExisting, let existing = existingGoal ?? GoalService.activeGoal(context: context) {
+            existing.goalType = goalType
+            existing.startWeightLbs = start
+            existing.goalWeightLbs = goal
+            existing.startDate = startDay
+            existing.targetDate = targetDate
+            existing.isActive = true
+        } else {
+            let all = (try? context.fetch(FetchDescriptor<WeightGoal>())) ?? []
+            for old in all {
+                old.isActive = false
+            }
+            context.insert(WeightGoal(
+                goalType: goalType,
+                startWeightLbs: start,
+                goalWeightLbs: goal,
+                startDate: startDay,
+                targetDate: targetDate
+            ))
         }
-
-        context.insert(WeightGoal(
-            goalType: goalType,
-            startWeightLbs: start,
-            goalWeightLbs: goal,
-            startDate: startDate,
-            targetDate: targetDate
-        ))
 
         do {
             try context.save()
