@@ -93,6 +93,7 @@ platform :ios do
     )
 
     write_whats_new(notes)
+    set_release_after_approval(version)
     wait_for_uploaded_build(version: version, build: build)
 
     upload_to_app_store(
@@ -113,6 +114,8 @@ platform :ios do
         export_compliance_encryption_updated: false
       }
     )
+
+    set_release_after_approval(version)
   end
 
   def require_env!(*keys)
@@ -202,6 +205,26 @@ platform :ios do
       poll_interval: 30,
       return_spaceship_testflight_build: false
     )
+  end
+
+  def set_release_after_approval(version_string)
+    app = Spaceship::ConnectAPI::App.find("com.belessfat.app")
+    UI.user_error!("Could not find com.belessfat.app in App Store Connect") if app.nil?
+    version = app.get_edit_app_store_version(platform: Spaceship::ConnectAPI::Platform::IOS)
+    if version.nil? || version.version_string != version_string
+      versions = app.get_app_store_versions(
+        filter: {
+          platform: Spaceship::ConnectAPI::Platform::IOS,
+          versionString: version_string
+        }
+      )
+      version = versions.first
+    end
+    UI.user_error!("No App Store version #{version_string} to set automatic release.") if version.nil?
+    version.update(attributes: { releaseType: "AFTER_APPROVAL" })
+    UI.success("Set #{version_string} to release automatically after approval")
+  rescue StandardError => e
+    UI.important("Could not set automatic release on #{version_string}: #{e.message}")
   end
 
   def write_whats_new(notes)

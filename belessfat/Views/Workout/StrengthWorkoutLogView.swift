@@ -17,6 +17,7 @@ struct StrengthWorkoutLogView: View {
     @State private var workoutEndAt = Date()
     @State private var syncToHealthKit = true
     @State private var prefilledFromLastSession = false
+    @State private var isSaving = false
 
     private struct ExerciseGroup: Identifiable {
         let id: String
@@ -53,43 +54,105 @@ struct StrengthWorkoutLogView: View {
         return groupMap.values.sorted { $0.sortOrder < $1.sortOrder }
     }
 
-    var body: some View {
-        NavigationStack {
-            List {
-                Section("Session") {
-                    NumericStepperField(
-                        title: "Duration",
-                        value: $durationMinutes,
-                        range: 5...180,
-                        step: 5,
-                        suffix: "min"
-                    )
-                    Toggle("Sync calories to HealthKit", isOn: $syncToHealthKit)
-                    if prefilledFromLastSession, let templateName = session.template?.name {
-                        Text("Prefilled from your last \(templateName) workout.")
+    @ViewBuilder
+    private var sessionSection: some View {
+        Section("Session") {
+            if session.isLive {
+                if session.isInProgress {
+                    TimelineView(.periodic(from: .now, by: 1)) { timeline in
+                        LabeledContent("Elapsed") {
+                            Text(elapsedLabel(at: timeline.date))
+                                .monospacedDigit()
+                        }
+                    }
+                    Text("Unchecked sets stay as planned. Close to resume from this day's log.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    LabeledContent("Started") {
+                        Text(session.effectiveWorkoutStart, format: .dateTime.hour().minute())
+                    }
+                    LabeledContent("Finished") {
+                        Text(session.effectiveWorkoutEnd, format: .dateTime.hour().minute())
+                    }
+                    LabeledContent("Duration", value: "\(formattedDurationMinutes) min")
+                    if session.incompleteSetCount > 0 {
+                        Text("\(session.incompleteSetCount) set\(session.incompleteSetCount == 1 ? "" : "s") planned but not done.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
                 }
-
-                WorkoutTimeSection(
-                    workoutEndAt: $workoutEndAt,
-                    durationMinutes: durationMinutes,
-                    syncToHealthKit: syncToHealthKit,
-                    includesSteps: false
+            } else {
+                NumericStepperField(
+                    title: "Duration",
+                    value: $durationMinutes,
+                    range: 5...180,
+                    step: 5,
+                    suffix: "min"
                 )
+            }
+            Toggle("Sync calories to HealthKit", isOn: $syncToHealthKit)
+            if prefilledFromLastSession, let templateName = session.template?.name {
+                Text("Prefilled from your last \(templateName) workout.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var formattedDurationMinutes: String {
+        let minutes = session.durationMinutes
+        if minutes < 1 { return "<1" }
+        return "\(Int(minutes.rounded()))"
+    }
+
+    private func elapsedLabel(at now: Date) -> String {
+        let start = session.startedAt ?? session.createdAt
+        let elapsed = max(0, now.timeIntervalSince(start))
+        let totalSeconds = Int(elapsed)
+        let hours = totalSeconds / 3600
+        let minutes = (totalSeconds % 3600) / 60
+        let seconds = totalSeconds % 60
+        if hours > 0 {
+            return String(format: "%d:%02d:%02d", hours, minutes, seconds)
+        }
+        return String(format: "%d:%02d", minutes, seconds)
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                sessionSection
+
+                if !session.isLive {
+                    WorkoutTimeSection(
+                        workoutEndAt: $workoutEndAt,
+                        durationMinutes: durationMinutes,
+                        syncToHealthKit: syncToHealthKit,
+                        includesSteps: false
+                    )
+                }
 
                 ForEach(exerciseGroups) { group in
-                    Section(group.name) {
+                    Section {
                         let sets = group.sets.sorted(by: { $0.setIndex < $1.setIndex })
                         ForEach(sets, id: \.id) { setLog in
-                            SetLogRow(setLog: setLog)
+                            SetLogRow(setLog: setLog, showsCompletion: session.isLive)
                         }
                         .onDelete { offsets in
                             deleteSets(sets, at: offsets)
                         }
                         Button("Add Set") {
                             addSet(for: group)
+                        }
+                    } header: {
+                        HStack {
+                            Text(group.name)
+                            if session.isLive {
+                                Spacer()
+                                Text("\(group.sets.filter(\.isCompleted).count) of \(group.sets.count)")
+                                    .foregroundStyle(.secondary)
+                            }
                         }
                     }
                 }
@@ -103,14 +166,26 @@ struct StrengthWorkoutLogView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
+                    Button(session.isInProgress ? "Close" : "Cancel") {
                         dismissKeyboard()
-                        if isNew { context.delete(session) }
+                        if isNew, !session.isLive {
+                            context.delete(session)
+                            try? context.save()
+                        } else if session.isInProgress {
+                            persistInProgressIfNeeded()
+                        }
                         DispatchQueue.main.async { dismiss() }
                     }
+                    .disabled(isSaving)
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") { saveSession() }
+                    if session.isInProgress {
+                        Button("Finish") { finishLiveSession() }
+                            .disabled(isSaving)
+                    } else {
+                        Button("Save") { saveSession() }
+                            .disabled(isSaving)
+                    }
                 }
             }
             .onAppear {
@@ -122,6 +197,11 @@ struct StrengthWorkoutLogView: View {
                 }
                 durationMinutes = session.durationMinutes > 0 ? session.durationMinutes : 45
                 workoutEndAt = initialWorkoutEndAt ?? session.effectiveWorkoutEnd
+            }
+            .onDisappear {
+                if session.isInProgress {
+                    persistInProgressIfNeeded()
+                }
             }
             .sheet(isPresented: $showExerciseSearch) {
                 ExerciseSearchView { exercise in
@@ -146,6 +226,7 @@ struct StrengthWorkoutLogView: View {
             reps: 8,
             weightLbs: nil,
             isWarmup: false,
+            plannedReps: session.isLive ? 8 : 0,
             context: context
         )
     }
@@ -154,15 +235,19 @@ struct StrengthWorkoutLogView: View {
         guard let exercise = group.exercise else { return }
         let nextIndex = (group.sets.map(\.setIndex).max() ?? -1) + 1
         let last = group.sets.last
+        let reps = last?.reps ?? 8
+        let weight = last?.weightLbs
         WorkoutService.addSetLog(
             to: session,
             exercise: exercise,
             exerciseSortOrder: group.sortOrder,
             setIndex: nextIndex,
-            reps: last?.reps ?? 8,
-            weightLbs: last?.weightLbs,
+            reps: reps,
+            weightLbs: weight,
             isWarmup: false,
             notes: last?.notes,
+            plannedReps: session.isLive ? reps : 0,
+            plannedWeightLbs: session.isLive ? weight : nil,
             context: context
         )
     }
@@ -174,11 +259,32 @@ struct StrengthWorkoutLogView: View {
         WorkoutService.deleteSetLogs(logs, from: session, context: context)
     }
 
+    private func persistInProgressIfNeeded() {
+        session.syncToHealthKit = syncToHealthKit
+        for log in session.setLogs {
+            log.freezeFromExercise()
+        }
+        try? context.save()
+    }
+
+    private func finishLiveSession() {
+        dismissKeyboard()
+        isSaving = true
+        persistInProgressIfNeeded()
+        Task {
+            await WorkoutService.finishLiveStrengthSession(session, context: context, healthKit: healthKit)
+            dismiss()
+        }
+    }
+
     private func saveSession() {
         dismissKeyboard()
-        session.durationMinutes = durationMinutes
+        isSaving = true
         session.syncToHealthKit = syncToHealthKit
-        WorkoutService.applyWorkoutEnd(workoutEndAt, to: session)
+        if !session.isLive {
+            session.durationMinutes = durationMinutes
+            WorkoutService.applyWorkoutEnd(workoutEndAt, to: session)
+        }
         for log in session.setLogs {
             log.freezeFromExercise()
         }
@@ -200,7 +306,9 @@ struct StrengthWorkoutLogView: View {
 }
 
 struct SetLogRow: View {
+    @Environment(\.modelContext) private var context
     @Bindable var setLog: WorkoutSetLog
+    var showsCompletion: Bool = false
     @State private var repsText = ""
     @State private var weightText = ""
     @State private var showNotes = false
@@ -208,8 +316,24 @@ struct SetLogRow: View {
 
     var body: some View {
         HStack {
-            Text("Set \(setLog.setIndex + 1)")
-                .frame(width: 50, alignment: .leading)
+            if showsCompletion {
+                Button(action: toggleCompleted) {
+                    Image(systemName: setLog.completedAt == nil ? "circle" : "checkmark.circle.fill")
+                        .font(.title3)
+                        .foregroundStyle(setLog.completedAt == nil ? Color.secondary : Color.accentColor)
+                }
+                .buttonStyle(.borderless)
+                .accessibilityLabel(setLog.completedAt == nil ? "Mark set complete" : "Mark set not done")
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Set \(setLog.setIndex + 1)")
+                if showsCompletion, let completedAt = setLog.completedAt {
+                    Text(completedAt, format: .dateTime.hour().minute())
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .frame(width: 50, alignment: .leading)
             TextField("Reps", text: $repsText)
                 .keyboardType(.numberPad)
                 .frame(width: 50)
@@ -253,6 +377,7 @@ struct SetLogRow: View {
             .buttonStyle(.borderless)
             .accessibilityLabel(setLog.hasNotes ? "Edit set notes" : "Add set notes")
         }
+        .opacity(showsCompletion && setLog.completedAt == nil ? 0.72 : 1)
         .sheet(isPresented: $showNotes) {
             NavigationStack {
                 TextField("Notes for this set", text: $notesDraft, axis: .vertical)
@@ -274,6 +399,15 @@ struct SetLogRow: View {
             }
             .presentationDetents([.medium])
         }
+    }
+
+    private func toggleCompleted() {
+        if setLog.completedAt == nil {
+            setLog.completedAt = Date()
+        } else {
+            setLog.completedAt = nil
+        }
+        try? context.save()
     }
 }
 

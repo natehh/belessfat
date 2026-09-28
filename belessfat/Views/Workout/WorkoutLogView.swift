@@ -131,9 +131,14 @@ struct WorkoutSessionRow: View {
                 }
             }
             HStack(spacing: 12) {
-                Label(session.effectiveWorkoutEnd.formatted(date: .omitted, time: .shortened), systemImage: "calendar")
-                if session.durationMinutes > 0 {
-                    Label("\(Int(session.durationMinutes)) min", systemImage: "clock")
+                if session.isInProgress {
+                    Label("In progress", systemImage: "record.circle")
+                        .foregroundStyle(.orange)
+                } else {
+                    Label(session.effectiveWorkoutEnd.formatted(date: .omitted, time: .shortened), systemImage: "calendar")
+                    if session.durationMinutes > 0 {
+                        Label("\(Int(session.durationMinutes.rounded())) min", systemImage: "clock")
+                    }
                 }
                 if session.estimatedCalories > 0 {
                     Label("\(Int(session.estimatedCalories)) kcal", systemImage: "flame")
@@ -142,7 +147,11 @@ struct WorkoutSessionRow: View {
                     Label("\(session.estimatedSteps) steps", systemImage: "figure.walk")
                 }
                 if session.workoutType == .strength {
-                    Label("\(session.setLogs.count) sets", systemImage: "number")
+                    if session.isLive {
+                        Label("\(session.completedSetCount)/\(session.setLogs.count) sets", systemImage: "number")
+                    } else {
+                        Label("\(session.setLogs.count) sets", systemImage: "number")
+                    }
                 }
                 if session.workoutType == .swimming, session.swimTotalLengths > 0 {
                     Label(

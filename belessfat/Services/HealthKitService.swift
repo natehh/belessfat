@@ -438,6 +438,8 @@ enum HealthKitCopy {
         "This app uses HealthKit to read step count, active energy, and body weight, and can optionally write workouts and estimated steps."
     static let workoutWriteDescription =
         "Optional. Writes workout calories and estimated steps to HealthKit (Apple Health)."
+    static let liveWorkoutWriteDescription =
+        "Optional. Calories are written to Apple Health when you tap Finish."
     static let diaryStepsFooter =
         "Step count is read from HealthKit."
 }

@@ -28,6 +28,17 @@ struct AddWorkoutSheet: View {
         WorkoutService.templates(context: context)
     }
 
+    private var isLiveTemplate: Bool {
+        workoutType == .strength && !useEmptySession && selectedTemplate != nil
+    }
+
+    private var canContinue: Bool {
+        if workoutType == .strength, !useEmptySession {
+            return selectedTemplate != nil
+        }
+        return true
+    }
+
     var body: some View {
         NavigationStack {
             Form {
@@ -49,17 +60,23 @@ struct AddWorkoutSheet: View {
                     cardioSection
                 }
 
-                WorkoutTimeSection(
-                    workoutEndAt: $workoutEndAt,
-                    durationMinutes: durationMinutes,
-                    syncToHealthKit: syncToHealthKit,
-                    includesSteps: workoutType.writesHealthKitSteps
-                )
+                if !isLiveTemplate {
+                    WorkoutTimeSection(
+                        workoutEndAt: $workoutEndAt,
+                        durationMinutes: durationMinutes,
+                        syncToHealthKit: syncToHealthKit,
+                        includesSteps: workoutType.writesHealthKitSteps
+                    )
+                }
 
                 Section("HealthKit") {
                     Toggle("Sync to HealthKit", isOn: $syncToHealthKit)
                     if syncToHealthKit {
-                        Text(HealthKitCopy.workoutWriteDescription)
+                        Text(
+                            isLiveTemplate
+                                ? HealthKitCopy.liveWorkoutWriteDescription
+                                : HealthKitCopy.workoutWriteDescription
+                        )
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -73,10 +90,17 @@ struct AddWorkoutSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Continue") { createWorkout() }
+                        .disabled(!canContinue)
                 }
             }
-            .sheet(item: $createdStrengthSession) { session in
-                StrengthWorkoutLogView(session: session, isNew: true, initialWorkoutEndAt: workoutEndAt)
+            .sheet(item: $createdStrengthSession, onDismiss: {
+                dismiss()
+            }) { session in
+                StrengthWorkoutLogView(
+                    session: session,
+                    isNew: true,
+                    initialWorkoutEndAt: session.isLive ? nil : workoutEndAt
+                )
             }
             .onAppear {
                 workoutEndAt = WorkoutService.defaultWorkoutEnd(for: date)
@@ -100,17 +124,25 @@ struct AddWorkoutSheet: View {
                     }
                 }
             }
-            Section("Duration") {
-                NumericStepperField(
-                    title: "Duration",
-                    value: $durationMinutes,
-                    range: 5...180,
-                    step: 5,
-                    suffix: "min"
-                )
-                Text("Used for calorie estimation. You can adjust after logging sets.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            if useEmptySession {
+                Section("Duration") {
+                    NumericStepperField(
+                        title: "Duration",
+                        value: $durationMinutes,
+                        range: 5...180,
+                        step: 5,
+                        suffix: "min"
+                    )
+                    Text("Used for calorie estimation. You can adjust after logging sets.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            } else {
+                Section {
+                    Text("Logging starts when you tap Continue. Tap Finish when you're done. Unchecked sets stay on the log as planned.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
         }
     }
@@ -187,14 +219,19 @@ struct AddWorkoutSheet: View {
         switch workoutType {
         case .strength:
             let template = useEmptySession ? nil : selectedTemplate
+            let isLive = template != nil
             let session = WorkoutService.createStrengthSession(
                 date: date,
                 template: template,
                 syncToHealthKit: syncToHealthKit,
                 durationMinutes: durationMinutes,
                 workoutEndAt: workoutEndAt,
+                isLive: isLive,
                 context: context
             )
+            if let template {
+                WorkoutService.seedSessionFromTemplate(session, template: template, context: context)
+            }
             createdStrengthSession = session
         case .tennisSingles, .tennisDoubles, .treadmill, .swimming:
             let session = WorkoutSession(

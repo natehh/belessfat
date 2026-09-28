@@ -18,6 +18,9 @@ final class WorkoutSession {
     var healthKitSyncId: String?
     var healthKitStepSampleId: String?
     var workoutEndAt: Date?
+    var startedAt: Date?
+    var isLive: Bool = false
+    var isInProgress: Bool = false
     var createdAt: Date
     @Relationship(deleteRule: .cascade, inverse: \WorkoutSetLog.session)
     var setLogs: [WorkoutSetLog]
@@ -43,6 +46,9 @@ final class WorkoutSession {
         self.estimatedSteps = 0
         self.estimatedCalories = 0
         self.workoutEndAt = Date()
+        self.startedAt = nil
+        self.isLive = false
+        self.isInProgress = false
         self.createdAt = Date()
         self.setLogs = []
         self.swimSegments = []
@@ -86,7 +92,35 @@ final class WorkoutSession {
         workoutEndAt ?? createdAt
     }
 
+    var effectiveWorkoutStart: Date {
+        if let startedAt { return startedAt }
+        let durationSec = max(durationMinutes * 60, 60)
+        return effectiveWorkoutEnd.addingTimeInterval(-durationSec)
+    }
+
+    var completedSetCount: Int {
+        setLogs.filter(\.isCompleted).count
+    }
+
+    var incompleteSetCount: Int {
+        guard isLive else { return 0 }
+        return setLogs.filter { !$0.isCompleted }.count
+    }
+
+    var setsShortOfPlannedReps: Int {
+        setLogs.filter(\.fellShortOfPlan).count
+    }
+
+    var didCompleteAllPlannedSets: Bool {
+        guard isLive, !setLogs.isEmpty else { return true }
+        return setLogs.allSatisfy(\.isCompleted)
+    }
+
     var healthKitTimeRange: (start: Date, end: Date) {
+        if isLive, let startedAt {
+            let end = max(effectiveWorkoutEnd, startedAt.addingTimeInterval(1))
+            return (startedAt, end)
+        }
         let end = effectiveWorkoutEnd
         let durationSec = max(durationMinutes * 60, 60)
         let start = end.addingTimeInterval(-durationSec)
@@ -105,6 +139,9 @@ final class WorkoutSetLog {
     var isWarmup: Bool
     var notes: String?
     var snapshotExerciseName: String?
+    var completedAt: Date?
+    var plannedReps: Int = 0
+    var plannedWeightLbs: Double?
     var session: WorkoutSession?
 
     init(
@@ -114,7 +151,9 @@ final class WorkoutSetLog {
         reps: Int,
         weightLbs: Double? = nil,
         isWarmup: Bool = false,
-        notes: String? = nil
+        notes: String? = nil,
+        plannedReps: Int = 0,
+        plannedWeightLbs: Double? = nil
     ) {
         self.id = UUID()
         self.exercise = exercise
@@ -124,9 +163,26 @@ final class WorkoutSetLog {
         self.weightLbs = weightLbs
         self.isWarmup = isWarmup
         self.notes = Self.normalizedNotes(notes)
+        self.completedAt = nil
+        self.plannedReps = plannedReps
+        self.plannedWeightLbs = plannedWeightLbs
         if let exercise {
             self.snapshotExerciseName = exercise.name
         }
+    }
+
+    /// Live sessions only count a set as done once it has been checked. After-the-fact
+    /// and older sessions treat every logged set as completed.
+    var isCompleted: Bool {
+        if session?.isLive == true {
+            return completedAt != nil
+        }
+        return true
+    }
+
+    var fellShortOfPlan: Bool {
+        guard isCompleted, plannedReps > 0 else { return false }
+        return reps < plannedReps
     }
 
     var hasNotes: Bool {
@@ -143,7 +199,7 @@ final class WorkoutSetLog {
     }
 
     var volume: Double {
-        guard let weightLbs, !isWarmup else { return 0 }
+        guard isCompleted, let weightLbs, !isWarmup else { return 0 }
         return Double(reps) * weightLbs
     }
 

@@ -29,6 +29,7 @@ enum WorkoutReportService {
 
     static func dailyRows(from start: Date, to end: Date, context: ModelContext) -> [DailyWorkoutRow] {
         let sessions = WorkoutService.sessions(from: start, to: end, context: context)
+            .filter { !$0.isInProgress }
         let days = DateHelpers.daysBetween(DateHelpers.startOfDay(start), DateHelpers.startOfDay(end))
 
         return days.map { day in
@@ -65,13 +66,15 @@ enum WorkoutReportService {
         context: ModelContext
     ) -> [ExerciseTrendPoint] {
         let sessions = WorkoutService.sessions(from: start, to: end, context: context)
-            .filter { $0.workoutType == .strength }
+            .filter { $0.workoutType == .strength && !$0.isInProgress }
         let days = DateHelpers.daysBetween(DateHelpers.startOfDay(start), DateHelpers.startOfDay(end))
 
         return days.compactMap { day -> ExerciseTrendPoint? in
             let daySessions = sessions.filter { DateHelpers.isSameDay($0.date, day) }
             let logs = daySessions.flatMap(\.setLogs).filter {
-                !$0.isWarmup && ($0.exercise?.id == exercise.id || $0.snapshotExerciseName == exercise.name)
+                !$0.isWarmup &&
+                $0.isCompleted &&
+                ($0.exercise?.id == exercise.id || $0.snapshotExerciseName == exercise.name)
             }
             guard !logs.isEmpty else { return nil }
 

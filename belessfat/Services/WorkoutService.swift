@@ -337,19 +337,45 @@ enum WorkoutService {
         syncToHealthKit: Bool,
         durationMinutes: Double,
         workoutEndAt: Date,
+        isLive: Bool,
         context: ModelContext
     ) -> WorkoutSession {
         let session = WorkoutSession(
             date: date,
             workoutType: .strength,
-            durationMinutes: durationMinutes,
+            durationMinutes: isLive ? 0 : durationMinutes,
             syncToHealthKit: syncToHealthKit
         )
-        applyWorkoutEnd(workoutEndAt, to: session)
         session.template = template
+        session.isLive = isLive
+        if isLive {
+            let start = Date()
+            session.startedAt = start
+            session.isInProgress = true
+            session.workoutEndAt = start
+            session.date = DateHelpers.startOfDay(date)
+        } else {
+            session.isInProgress = false
+            applyWorkoutEnd(workoutEndAt, to: session)
+        }
         context.insert(session)
         try? context.save()
         return session
+    }
+
+    static func finishLiveStrengthSession(
+        _ session: WorkoutSession,
+        context: ModelContext,
+        healthKit: HealthKitService
+    ) async {
+        let end = Date()
+        session.isInProgress = false
+        session.workoutEndAt = end
+        if let start = session.startedAt {
+            session.durationMinutes = max(end.timeIntervalSince(start) / 60.0, 1.0 / 60.0)
+        }
+        try? context.save()
+        await finalizeStrengthSession(session, context: context, healthKit: healthKit)
     }
 
     static func lastSession(
@@ -368,6 +394,7 @@ enum WorkoutService {
         return sessions.first { session in
             session.template?.id == templateId &&
             session.id != excludingId &&
+            !session.isInProgress &&
             !session.setLogs.isEmpty
         }
     }
@@ -380,7 +407,7 @@ enum WorkoutService {
         guard session.setLogs.isEmpty else { return }
 
         if let previous = lastSession(for: template, excluding: session, context: context) {
-            if previous.durationMinutes > 0 {
+            if !session.isLive, previous.durationMinutes > 0 {
                 session.durationMinutes = previous.durationMinutes
             }
             for (index, item) in template.sortedExercises.enumerated() {
@@ -400,15 +427,20 @@ enum WorkoutService {
                     )
                 } else {
                     for log in previousLogs {
+                        let completed = previous.isLive ? log.completedAt != nil : true
+                        let reps = completed ? log.reps : (log.plannedReps > 0 ? log.plannedReps : log.reps)
+                        let weight = completed ? log.weightLbs : (log.plannedWeightLbs ?? log.weightLbs)
                         addSetLog(
                             to: session,
                             exercise: exercise,
                             exerciseSortOrder: index,
                             setIndex: log.setIndex,
-                            reps: log.reps,
-                            weightLbs: log.weightLbs,
+                            reps: reps,
+                            weightLbs: weight,
                             isWarmup: log.isWarmup,
                             notes: log.notes,
+                            plannedReps: reps,
+                            plannedWeightLbs: weight,
                             context: context
                         )
                     }
@@ -449,6 +481,8 @@ enum WorkoutService {
         weightLbs: Double?,
         isWarmup: Bool,
         notes: String? = nil,
+        plannedReps: Int = 0,
+        plannedWeightLbs: Double? = nil,
         context: ModelContext
     ) {
         let log = WorkoutSetLog(
@@ -458,7 +492,9 @@ enum WorkoutService {
             reps: reps,
             weightLbs: weightLbs,
             isWarmup: isWarmup,
-            notes: notes
+            notes: notes,
+            plannedReps: plannedReps,
+            plannedWeightLbs: plannedWeightLbs
         )
         log.session = session
         session.setLogs.append(log)

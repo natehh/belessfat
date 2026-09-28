@@ -27,7 +27,7 @@ enum WorkoutCalorieCalculator {
         weightLbs: Double,
         settings: WorkoutSettings
     ) -> Double {
-        let workingSets = session.setLogs.filter { !$0.isWarmup }
+        let workingSets = session.setLogs.filter { !$0.isWarmup && $0.isCompleted }
         guard !workingSets.isEmpty else { return 0 }
 
         let duration = estimatedDurationMinutes(
