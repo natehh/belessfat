@@ -153,11 +153,8 @@ struct WorkoutSessionRow: View {
                         Label("\(session.setLogs.count) sets", systemImage: "number")
                     }
                 }
-                if session.workoutType == .swimming, session.swimTotalLengths > 0 {
-                    Label(
-                        "\(session.swimTotalLengths) lengths · \(session.poolLength.distanceLabel(lengths: session.swimTotalLengths))",
-                        systemImage: "figure.pool.swim"
-                    )
+                if session.workoutType == .swimming, let distance = session.swimDistanceLabel {
+                    Label(distance, systemImage: "figure.pool.swim")
                 }
             }
             .font(.caption)

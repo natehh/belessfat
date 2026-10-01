@@ -23,6 +23,17 @@ enum MealCategory: String, Codable, CaseIterable, Identifiable {
         [.breakfast, .lunch, .dinner, .snacks]
     }
 
+    /// Meal that matches the time of day when logging outside the diary.
+    static var forCurrentTime: MealCategory {
+        let hour = Calendar.current.component(.hour, from: Date())
+        switch hour {
+        case 5..<11: return .breakfast
+        case 11..<16: return .lunch
+        case 16..<21: return .dinner
+        default: return .snacks
+        }
+    }
+
     var shortcutType: String {
         "com.belessfat.app.log.\(rawValue)"
     }
@@ -43,6 +54,20 @@ enum FoodSource: String, Codable {
 enum WeightEntrySource: String, Codable {
     case manual
     case healthKit
+}
+
+enum BodyFatSource: String, Codable {
+    case manual
+    case healthKit
+    case progressPhoto
+
+    var diaryCaption: String? {
+        switch self {
+        case .manual: return nil
+        case .healthKit: return "From HealthKit"
+        case .progressPhoto: return "From progress photo"
+        }
+    }
 }
 
 enum GoalType: String, Codable, CaseIterable, Identifiable {
@@ -310,6 +335,39 @@ enum PoolLength: String, Codable, CaseIterable, Identifiable {
 
     func distanceLabel(lengths: Int) -> String {
         "\(lengths * lengthValue) \(lengthLabel)"
+    }
+}
+
+enum SwimDistanceUnit: String, Codable, CaseIterable, Identifiable {
+    case yards
+    case meters
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .yards: return "Yards"
+        case .meters: return "Meters"
+        }
+    }
+
+    var abbreviation: String {
+        switch self {
+        case .yards: return "yd"
+        case .meters: return "m"
+        }
+    }
+
+    func meters(from value: Double) -> Double {
+        switch self {
+        case .yards: return value * 0.9144
+        case .meters: return value
+        }
+    }
+
+    func format(_ value: Double) -> String {
+        let number = value.formatted(.number.precision(.fractionLength(0...2)))
+        return "\(number) \(abbreviation)"
     }
 }
 

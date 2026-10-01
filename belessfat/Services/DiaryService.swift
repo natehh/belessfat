@@ -383,3 +383,70 @@ enum DiaryService {
         try? context.save()
     }
 }
+
+struct DiaryClipboardItem {
+    var food: Food?
+    var recipe: Recipe?
+    var quantity: Double
+    var servingUnit: ServingUnitType
+    var snapshotName: String?
+    var snapshotCaloriesPerQuantity: Double
+    var snapshotProteinPerQuantity: Double
+    var snapshotCarbsPerQuantity: Double
+    var snapshotFatPerQuantity: Double
+    var recipeIngredientOverridesJSON: String?
+
+    init(_ entry: LogEntry) {
+        food = entry.food
+        recipe = entry.recipe
+        quantity = entry.quantity
+        servingUnit = entry.servingUnit
+        snapshotName = entry.snapshotName
+        snapshotCaloriesPerQuantity = entry.snapshotCaloriesPerQuantity
+        snapshotProteinPerQuantity = entry.snapshotProteinPerQuantity
+        snapshotCarbsPerQuantity = entry.snapshotCarbsPerQuantity
+        snapshotFatPerQuantity = entry.snapshotFatPerQuantity
+        recipeIngredientOverridesJSON = entry.recipeIngredientOverridesJSON
+    }
+
+    func makeEntry(date: Date, meal: MealCategory) -> LogEntry {
+        let entry = LogEntry(
+            date: date,
+            mealCategory: meal,
+            quantity: quantity,
+            servingUnit: servingUnit,
+            food: food,
+            recipe: recipe
+        )
+        entry.snapshotName = snapshotName
+        entry.snapshotCaloriesPerQuantity = snapshotCaloriesPerQuantity
+        entry.snapshotProteinPerQuantity = snapshotProteinPerQuantity
+        entry.snapshotCarbsPerQuantity = snapshotCarbsPerQuantity
+        entry.snapshotFatPerQuantity = snapshotFatPerQuantity
+        entry.recipeIngredientOverridesJSON = recipeIngredientOverridesJSON
+        return entry
+    }
+}
+
+@MainActor
+final class DiaryClipboard: ObservableObject {
+    static let shared = DiaryClipboard()
+
+    @Published private(set) var items: [DiaryClipboardItem] = []
+
+    var canPaste: Bool { !items.isEmpty }
+
+    func copy(_ entries: [LogEntry]) {
+        let copied = entries.map(DiaryClipboardItem.init)
+        guard !copied.isEmpty else { return }
+        items = copied
+    }
+
+    func paste(into meal: MealCategory, on date: Date, context: ModelContext) {
+        guard canPaste else { return }
+        for item in items {
+            context.insert(item.makeEntry(date: date, meal: meal))
+        }
+        try? context.save()
+    }
+}

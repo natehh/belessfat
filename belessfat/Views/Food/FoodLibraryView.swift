@@ -23,7 +23,9 @@ struct FoodLibraryView: View {
     @State private var showCreateRecipe = false
     @State private var showURLImport = false
     @State private var foodToDelete: Food?
+    @State private var foodToLog: Food?
     @State private var recipeToDelete: Recipe?
+    @State private var recipeToLog: Recipe?
     @State private var recipeToDuplicate: Recipe?
 
     private var foods: [Food] {
@@ -90,6 +92,12 @@ struct FoodLibraryView: View {
             }
             .sheet(isPresented: $showURLImport) {
                 RecipeURLImportView()
+            }
+            .sheet(item: $foodToLog) { food in
+                libraryLogFoodSheet(food)
+            }
+            .sheet(item: $recipeToLog) { recipe in
+                libraryLogRecipeSheet(recipe)
             }
             .sheet(item: $recipeToDuplicate) { recipe in
                 RecipeEditorView(
@@ -160,6 +168,18 @@ struct FoodLibraryView: View {
                             .foregroundStyle(.secondary)
                     }
                 }
+                .contextMenu {
+                    Button("Log") { foodToLog = food }
+                    Button("Delete", role: .destructive) { foodToDelete = food }
+                }
+                .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                    Button {
+                        foodToLog = food
+                    } label: {
+                        Label("Log", systemImage: "plus")
+                    }
+                    .tint(.accentColor)
+                }
                 .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                     Button(role: .destructive) {
                         foodToDelete = food
@@ -189,8 +209,17 @@ struct FoodLibraryView: View {
                     }
                 }
                 .contextMenu {
+                    Button("Log") { recipeToLog = recipe }
                     Button("Duplicate & Edit") { recipeToDuplicate = recipe }
                     Button("Delete", role: .destructive) { recipeToDelete = recipe }
+                }
+                .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                    Button {
+                        recipeToLog = recipe
+                    } label: {
+                        Label("Log", systemImage: "plus")
+                    }
+                    .tint(.accentColor)
                 }
                 .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                     Button(role: .destructive) {
@@ -200,6 +229,33 @@ struct FoodLibraryView: View {
                     }
                 }
             }
+        }
+    }
+
+    @ViewBuilder
+    private func libraryLogFoodSheet(_ food: Food) -> some View {
+        let amount = DiaryService.loggingAmount(for: food, context: context)
+        LogFoodSheet(
+            food: food,
+            defaultMeal: MealCategory.forCurrentTime,
+            date: Date(),
+            initialQuantity: amount.quantity,
+            initialUnit: amount.unit
+        ) {}
+    }
+
+    @ViewBuilder
+    private func libraryLogRecipeSheet(_ recipe: Recipe) -> some View {
+        let amount = DiaryService.loggingAmount(for: recipe, context: context)
+        NavigationStack {
+            LogRecipeView(
+                recipe: recipe,
+                defaultMeal: MealCategory.forCurrentTime,
+                date: Date(),
+                initialQuantity: amount.quantity,
+                initialUnit: amount.unit,
+                initialOverrides: amount.recipeOverrides
+            ) {}
         }
     }
 
@@ -227,6 +283,7 @@ struct CustomFoodDetailView: View {
 
     @State private var showEdit = false
     @State private var showDeleteConfirm = false
+    @State private var showLog = false
 
     var body: some View {
         List {
@@ -282,12 +339,23 @@ struct CustomFoodDetailView: View {
             }
 
             Section {
+                Button("Log Food") { showLog = true }
                 Button("Edit Food") { showEdit = true }
                 Button("Delete Food", role: .destructive) { showDeleteConfirm = true }
             }
         }
         .navigationTitle(food.displayName)
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $showLog) {
+            let amount = DiaryService.loggingAmount(for: food, context: context)
+            LogFoodSheet(
+                food: food,
+                defaultMeal: MealCategory.forCurrentTime,
+                date: Date(),
+                initialQuantity: amount.quantity,
+                initialUnit: amount.unit
+            ) {}
+        }
         .sheet(isPresented: $showEdit) {
             CustomFoodFormView(
                 barcode: food.barcode,
@@ -315,6 +383,7 @@ struct RecipeLibraryDetailView: View {
 
     @State private var showEdit = false
     @State private var showDeleteConfirm = false
+    @State private var showLog = false
 
     var body: some View {
         List {
@@ -383,12 +452,26 @@ struct RecipeLibraryDetailView: View {
             }
 
             Section {
+                Button("Log Recipe") { showLog = true }
                 Button("Edit Recipe") { showEdit = true }
                 Button("Delete Recipe", role: .destructive) { showDeleteConfirm = true }
             }
         }
         .navigationTitle(recipe.name)
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $showLog) {
+            let amount = DiaryService.loggingAmount(for: recipe, context: context)
+            NavigationStack {
+                LogRecipeView(
+                    recipe: recipe,
+                    defaultMeal: MealCategory.forCurrentTime,
+                    date: Date(),
+                    initialQuantity: amount.quantity,
+                    initialUnit: amount.unit,
+                    initialOverrides: amount.recipeOverrides
+                ) {}
+            }
+        }
         .sheet(isPresented: $showEdit) {
             RecipeEditorView(existingRecipe: recipe)
         }

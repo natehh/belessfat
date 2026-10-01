@@ -70,6 +70,7 @@ struct SettingsView: View {
         try? context.delete(model: Recipe.self)
         try? context.delete(model: LogEntry.self)
         try? context.delete(model: WeightEntry.self)
+        try? context.delete(model: BodyFatEntry.self)
         try? context.delete(model: WeightGoal.self)
         try? context.delete(model: DailyHealthSnapshot.self)
         try? context.delete(model: MealTemplate.self)

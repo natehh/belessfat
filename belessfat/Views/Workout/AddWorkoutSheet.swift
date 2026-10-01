@@ -19,7 +19,7 @@ struct AddWorkoutSheet: View {
     // Cardio fields
     @State private var treadmillSpeed = 3.5
     @State private var treadmillIncline = 0.0
-    @State private var poolLength: PoolLength = .yards25
+    @State private var swimDistanceUnit: SwimDistanceUnit = .yards
     @State private var swimSegments: [SwimSegmentDraft] = [SwimSegmentDraft()]
 
     @State private var createdStrengthSession: WorkoutSession?
@@ -158,7 +158,7 @@ struct AddWorkoutSheet: View {
                     suffix: "min"
                 )
             }
-            SwimSegmentsEditor(poolLength: $poolLength, segments: $swimSegments)
+            SwimSegmentsEditor(unit: $swimDistanceUnit, segments: $swimSegments)
         }
     }
 
@@ -247,8 +247,12 @@ struct AddWorkoutSheet: View {
             WorkoutService.applyWorkoutEnd(workoutEndAt, to: session)
             context.insert(session)
             if workoutType == .swimming {
-                session.poolLength = poolLength
-                WorkoutService.replaceSwimSegments(on: session, drafts: swimSegments, context: context)
+                WorkoutService.replaceSwimSegments(
+                    on: session,
+                    unit: swimDistanceUnit,
+                    drafts: swimSegments,
+                    context: context
+                )
             }
             try? context.save()
             Task {

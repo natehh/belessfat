@@ -1,62 +1,58 @@
 import SwiftUI
 
 struct SwimSegmentsEditor: View {
-    @Binding var poolLength: PoolLength
+    @Binding var unit: SwimDistanceUnit
     @Binding var segments: [SwimSegmentDraft]
 
-    private var totalLengths: Int {
-        segments.reduce(0) { $0 + Int($1.lengths) }
+    private var totalDistance: Double {
+        segments.reduce(0) { $0 + $1.distance }
     }
 
     var body: some View {
         Group {
-        Section("Pool") {
-            Picker("Length", selection: $poolLength) {
-                ForEach(PoolLength.allCases) { length in
-                    Text(length.displayName).tag(length)
+            Section("Distance") {
+                Picker("Unit", selection: $unit) {
+                    ForEach(SwimDistanceUnit.allCases) { unit in
+                        Text(unit.displayName).tag(unit)
+                    }
                 }
             }
-            .pickerStyle(.segmented)
-        }
 
-        Section {
-            ForEach($segments) { $segment in
-                VStack(alignment: .leading, spacing: 8) {
-                    Picker("Stroke", selection: $segment.stroke) {
-                        ForEach(SwimStroke.allCases) { stroke in
-                            Text(stroke.displayName).tag(stroke)
+            Section {
+                ForEach($segments) { $segment in
+                    VStack(alignment: .leading, spacing: 8) {
+                        Picker("Stroke", selection: $segment.stroke) {
+                            ForEach(SwimStroke.allCases) { stroke in
+                                Text(stroke.displayName).tag(stroke)
+                            }
+                        }
+                        HStack {
+                            Text("Distance")
+                            DecimalPadTextField(text: $segment.distanceText, placeholder: "0")
                         }
                     }
-                    NumericStepperField(
-                        title: "Lengths",
-                        value: $segment.lengths,
-                        range: 0...500,
-                        step: 1,
-                        format: "%.0f"
-                    )
                 }
-            }
-            .onDelete { offsets in
-                segments.remove(atOffsets: offsets)
-                if segments.isEmpty {
-                    segments = [SwimSegmentDraft()]
+                .onDelete { offsets in
+                    segments.remove(atOffsets: offsets)
+                    if segments.isEmpty {
+                        segments = [SwimSegmentDraft()]
+                    }
                 }
-            }
 
-            Button {
-                segments.append(SwimSegmentDraft())
-            } label: {
-                Label("Add Stroke", systemImage: "plus")
+                Button {
+                    segments.append(SwimSegmentDraft())
+                } label: {
+                    Label("Add Stroke", systemImage: "plus")
+                }
+            } header: {
+                Text("Strokes")
+            } footer: {
+                if totalDistance > 0 {
+                    Text("\(unit.format(totalDistance)). Calories use each stroke’s effort and split your clock time by typical pace.")
+                } else {
+                    Text("Enter a distance for each stroke. Calories still use duration if you leave distance blank.")
+                }
             }
-        } header: {
-            Text("Strokes")
-        } footer: {
-            if totalLengths > 0 {
-                Text("\(totalLengths) lengths · \(poolLength.distanceLabel(lengths: totalLengths)). Calories use each stroke’s effort and split your clock time by typical pace.")
-            } else {
-                Text("Log lengths per stroke so mixed sets stay on the record. Calories still use duration if you leave lengths at 0.")
-            }
-        }
         }
     }
 }

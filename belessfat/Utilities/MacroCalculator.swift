@@ -347,13 +347,18 @@ enum MacroCalculator {
     }
 
     static func movingAverage(entries: [WeightEntry], window: Int = 7) -> [(date: Date, value: Double)] {
-        let sorted = entries.sorted { $0.date < $1.date }
+        movingAverage(points: entries.map { (date: $0.date, value: $0.weightLbs) }, window: window)
+    }
+
+    /// Average of the last `window` points, including the current one. Matches the weight chart.
+    static func movingAverage(points: [(date: Date, value: Double)], window: Int = 7) -> [(date: Date, value: Double)] {
+        let sorted = points.sorted { $0.date < $1.date }
         guard !sorted.isEmpty else { return [] }
-        return sorted.enumerated().map { index, entry in
+        return sorted.enumerated().map { index, point in
             let start = max(0, index - window + 1)
             let slice = sorted[start...index]
-            let avg = slice.map(\.weightLbs).reduce(0, +) / Double(slice.count)
-            return (entry.date, avg)
+            let avg = slice.map(\.value).reduce(0, +) / Double(slice.count)
+            return (point.date, avg)
         }
     }
 

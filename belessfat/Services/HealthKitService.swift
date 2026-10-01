@@ -19,6 +19,7 @@ final class HealthKitService: ObservableObject {
     @Published private(set) var cachedDate = Date()
 
     private var bodyMassObserver: HKObserverQuery?
+    private var bodyFatObserver: HKObserverQuery?
     private var observedContext: ModelContext?
 
     var isAvailable: Bool {
@@ -49,6 +50,9 @@ final class HealthKitService: ObservableObject {
         }
         if let weight = HKQuantityType.quantityType(forIdentifier: .bodyMass) {
             types.insert(weight)
+        }
+        if let bodyFat = HKQuantityType.quantityType(forIdentifier: .bodyFatPercentage) {
+            types.insert(bodyFat)
         }
         return types
     }
@@ -128,6 +132,28 @@ final class HealthKitService: ObservableObject {
         }
         bodyMassObserver = query
         store.execute(query)
+        startObservingBodyFat()
+    }
+
+    private func startObservingBodyFat() {
+        guard isAvailable, bodyFatObserver == nil,
+              let type = HKQuantityType.quantityType(forIdentifier: .bodyFatPercentage) else { return }
+
+        let query = HKObserverQuery(sampleType: type, predicate: nil) { [weak self] _, completionHandler, error in
+            Task { @MainActor in
+                defer { completionHandler() }
+                if let error {
+                    Self.log.error("body fat observer: \(error.localizedDescription, privacy: .public)")
+                    return
+                }
+                guard let self, let context = self.observedContext else { return }
+                let end = Date()
+                let start = Calendar.current.date(byAdding: .day, value: -2, to: end) ?? end
+                _ = await self.importBodyFat(from: start, to: end, context: context)
+            }
+        }
+        bodyFatObserver = query
+        store.execute(query)
     }
 
     func sync(from start: Date, to end: Date, context: ModelContext) async {
@@ -165,6 +191,7 @@ final class HealthKitService: ObservableObject {
 
         let weightLookback = Calendar.current.date(byAdding: .day, value: -89, to: startDay) ?? startDay
         let weightImport = await importBodyMassDetailed(from: weightLookback, to: endDay, context: context)
+        _ = await importBodyFat(from: weightLookback, to: endDay, context: context)
         let importedWeights = weightImport.imported
 
         isAuthorized = true
@@ -401,6 +428,56 @@ final class HealthKitService: ObservableObject {
         }
     }
 
+    @discardableResult
+    private func importBodyFat(from start: Date, to end: Date, context: ModelContext) async -> Int {
+        let samples = await fetchBodyFatSamples(from: start, to: end)
+        var latestByDay: [Date: (recordedAt: Date, percent: Double)] = [:]
+        for sample in samples {
+            let day = DateHelpers.startOfDay(sample.recordedAt)
+            if let existing = latestByDay[day], existing.recordedAt >= sample.recordedAt {
+                continue
+            }
+            latestByDay[day] = sample
+        }
+
+        var imported = 0
+        for (day, sample) in latestByDay {
+            if GoalService.applyHealthKitBodyFat(sample.percent, recordedAt: sample.recordedAt, for: day, context: context) {
+                imported += 1
+            }
+        }
+        Self.log.info("body fat import: \(samples.count) sample(s), \(imported) applied")
+        return imported
+    }
+
+    private func fetchBodyFatSamples(from start: Date, to end: Date) async -> [(recordedAt: Date, percent: Double)] {
+        guard let type = HKQuantityType.quantityType(forIdentifier: .bodyFatPercentage) else { return [] }
+        let startDay = DateHelpers.startOfDay(start)
+        let endExclusive = DateHelpers.startOfNextDay(end)
+        let predicate = HKQuery.predicateForSamples(withStart: startDay, end: endExclusive, options: [.strictStartDate, .strictEndDate])
+
+        return await withCheckedContinuation { continuation in
+            let query = HKSampleQuery(
+                sampleType: type,
+                predicate: predicate,
+                limit: HKObjectQueryNoLimit,
+                sortDescriptors: [NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: false)]
+            ) { _, samples, error in
+                if let error {
+                    Self.log.error("body fat query failed: \(error.localizedDescription, privacy: .public)")
+                }
+                let mapped = (samples as? [HKQuantitySample] ?? []).compactMap { sample -> (recordedAt: Date, percent: Double)? in
+                    let fraction = sample.quantity.doubleValue(for: .percent())
+                    let percent = fraction * 100
+                    guard percent > 0, percent < 100 else { return nil }
+                    return (recordedAt: max(sample.startDate, sample.endDate), percent: percent)
+                }
+                continuation.resume(returning: mapped)
+            }
+            store.execute(query)
+        }
+    }
+
     private func fetchSum(for type: HKQuantityType, date: Date, unit: HKUnit) async -> Double {
         let start = DateHelpers.startOfDay(date)
         guard let end = Calendar.current.date(byAdding: .day, value: 1, to: start) else { return 0 }
@@ -435,7 +512,7 @@ final class HealthKitService: ObservableObject {
 
 enum HealthKitCopy {
     static let settingsDescription =
-        "This app uses HealthKit to read step count, active energy, and body weight, and can optionally write workouts and estimated steps."
+        "This app uses HealthKit to read step count, active energy, body weight, and body fat percentage, and can optionally write workouts and estimated steps."
     static let workoutWriteDescription =
         "Optional. Writes workout calories and estimated steps to HealthKit (Apple Health)."
     static let liveWorkoutWriteDescription =

@@ -18,6 +18,9 @@ struct StrengthWorkoutLogView: View {
     @State private var syncToHealthKit = true
     @State private var prefilledFromLastSession = false
     @State private var isSaving = false
+    @State private var showResumePrompt = false
+    @State private var declinedResume = false
+    @State private var resumePromptAnswered = false
 
     private struct ExerciseGroup: Identifiable {
         let id: String
@@ -106,10 +109,16 @@ struct StrengthWorkoutLogView: View {
         return "\(Int(minutes.rounded()))"
     }
 
+    private var bankedTimeLabel: String {
+        formattedElapsed(session.durationMinutes * 60)
+    }
+
     private func elapsedLabel(at now: Date) -> String {
-        let start = session.startedAt ?? session.createdAt
-        let elapsed = max(0, now.timeIntervalSince(start))
-        let totalSeconds = Int(elapsed)
+        formattedElapsed(session.activeElapsed(at: now))
+    }
+
+    private func formattedElapsed(_ elapsed: TimeInterval) -> String {
+        let totalSeconds = Int(max(0, elapsed))
         let hours = totalSeconds / 3600
         let minutes = (totalSeconds % 3600) / 60
         let seconds = totalSeconds % 60
@@ -137,7 +146,9 @@ struct StrengthWorkoutLogView: View {
                     Section {
                         let sets = group.sets.sorted(by: { $0.setIndex < $1.setIndex })
                         ForEach(sets, id: \.id) { setLog in
-                            SetLogRow(setLog: setLog, showsCompletion: session.isLive)
+                            SetLogRow(setLog: setLog, showsCompletion: session.isLive) {
+                                toggleCompletion(setLog)
+                            }
                         }
                         .onDelete { offsets in
                             deleteSets(sets, at: offsets)
@@ -213,7 +224,41 @@ struct StrengthWorkoutLogView: View {
                     addExercise(exercise)
                 }
             }
+            .confirmationDialog(
+                "Resume this workout?",
+                isPresented: $showResumePrompt,
+                titleVisibility: .visible
+            ) {
+                Button("Resume") {
+                    resumePromptAnswered = true
+                    declinedResume = false
+                    WorkoutService.resumeLiveStrengthSession(session, context: context)
+                }
+                Button("Keep Finished", role: .cancel) {
+                    resumePromptAnswered = true
+                    declinedResume = true
+                }
+            } message: {
+                Text("Continue the timer from \(bankedTimeLabel).")
+            }
+            .onChange(of: showResumePrompt) { _, isShowing in
+                if !isShowing, !resumePromptAnswered {
+                    declinedResume = true
+                }
+            }
         }
+    }
+
+    private func toggleCompletion(_ setLog: WorkoutSetLog) {
+        if setLog.completedAt == nil {
+            setLog.completedAt = Date()
+        } else {
+            setLog.completedAt = nil
+        }
+        try? context.save()
+        guard session.isLive, !session.isInProgress, !declinedResume else { return }
+        resumePromptAnswered = false
+        showResumePrompt = true
     }
 
     private func addExercise(_ exercise: Exercise) {
@@ -309,6 +354,7 @@ struct SetLogRow: View {
     @Environment(\.modelContext) private var context
     @Bindable var setLog: WorkoutSetLog
     var showsCompletion: Bool = false
+    var onToggleCompletion: (() -> Void)? = nil
     @State private var repsText = ""
     @State private var weightText = ""
     @State private var showNotes = false
@@ -317,7 +363,7 @@ struct SetLogRow: View {
     var body: some View {
         HStack {
             if showsCompletion {
-                Button(action: toggleCompleted) {
+                Button(action: onToggleCompletion ?? toggleCompleted) {
                     Image(systemName: setLog.completedAt == nil ? "circle" : "checkmark.circle.fill")
                         .font(.title3)
                         .foregroundStyle(setLog.completedAt == nil ? Color.secondary : Color.accentColor)
@@ -422,7 +468,7 @@ struct CardioWorkoutDetailView: View {
     @State private var workoutEndAt = Date()
     @State private var treadmillSpeed = 3.5
     @State private var treadmillIncline = 0.0
-    @State private var poolLength: PoolLength = .yards25
+    @State private var swimDistanceUnit: SwimDistanceUnit = .yards
     @State private var swimSegments: [SwimSegmentDraft] = [SwimSegmentDraft()]
     @State private var syncToHealthKit = true
     @State private var isSaving = false
@@ -466,7 +512,7 @@ struct CardioWorkoutDetailView: View {
                 }
 
                 if isSwimming {
-                    SwimSegmentsEditor(poolLength: $poolLength, segments: $swimSegments)
+                    SwimSegmentsEditor(unit: $swimDistanceUnit, segments: $swimSegments)
                 }
 
                 WorkoutTimeSection(
@@ -511,9 +557,9 @@ struct CardioWorkoutDetailView: View {
                 workoutEndAt = session.effectiveWorkoutEnd
                 treadmillSpeed = session.treadmillSpeedMph ?? 3.5
                 treadmillIncline = session.treadmillInclinePercent ?? 0
-                poolLength = session.poolLength
-                let existing = session.sortedSwimSegments.map { SwimSegmentDraft(stroke: $0.stroke, lengths: $0.lengths) }
-                swimSegments = existing.isEmpty ? [SwimSegmentDraft()] : existing
+                let swim = WorkoutService.swimEditorState(for: session)
+                swimDistanceUnit = swim.unit
+                swimSegments = swim.drafts
                 syncToHealthKit = session.syncToHealthKit
             }
         }
@@ -529,8 +575,12 @@ struct CardioWorkoutDetailView: View {
             session.treadmillInclinePercent = treadmillIncline
         }
         if isSwimming {
-            session.poolLength = poolLength
-            WorkoutService.replaceSwimSegments(on: session, drafts: swimSegments, context: context)
+            WorkoutService.replaceSwimSegments(
+                on: session,
+                unit: swimDistanceUnit,
+                drafts: swimSegments,
+                context: context
+            )
         }
         WorkoutService.applyWorkoutEnd(workoutEndAt, to: session)
         try? context.save()

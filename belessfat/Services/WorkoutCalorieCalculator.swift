@@ -108,18 +108,16 @@ enum WorkoutCalorieCalculator {
     static func swimmingCalories(
         durationMinutes: Double,
         weightLbs: Double,
-        poolLength: PoolLength,
-        segments: [(stroke: SwimStroke, lengths: Int)]
+        segments: [(stroke: SwimStroke, meters: Double)]
     ) -> Double {
-        let valid = segments.filter { $0.lengths > 0 }
+        let valid = segments.filter { $0.meters > 0 }
         guard durationMinutes > 0, weightLbs > 0 else { return 0 }
         if valid.isEmpty {
             return calories(met: 8.0, weightLbs: weightLbs, durationMinutes: durationMinutes)
         }
 
         let estimatedMinutes = valid.map { segment -> (met: Double, minutes: Double) in
-            let meters = Double(segment.lengths) * poolLength.meters
-            let minutes = meters / max(segment.stroke.relativeVelocityMetersPerMin, 1)
+            let minutes = segment.meters / max(segment.stroke.relativeVelocityMetersPerMin, 1)
             return (segment.stroke.met, minutes)
         }
         let totalEstimated = estimatedMinutes.reduce(0) { $0 + $1.minutes }

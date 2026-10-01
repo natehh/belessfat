@@ -59,6 +59,7 @@ struct BelessfatApp: App {
             RecipeIngredient.self,
             LogEntry.self,
             WeightEntry.self,
+            BodyFatEntry.self,
             WeightGoal.self,
             UserSettings.self,
             DailyHealthSnapshot.self,

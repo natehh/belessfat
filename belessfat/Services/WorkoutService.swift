@@ -5,14 +5,21 @@ import HealthKit
 struct SwimSegmentDraft: Identifiable, Equatable {
     var id = UUID()
     var stroke: SwimStroke = .freestyle
-    var lengths: Double = 0
+    var distanceText: String = ""
 
-    init(stroke: SwimStroke = .freestyle, lengths: Int = 0) {
+    init(stroke: SwimStroke = .freestyle, distance: Double? = nil) {
         self.stroke = stroke
-        self.lengths = Double(lengths)
+        if let distance, distance > 0 {
+            distanceText = distance.formatted(.number.precision(.fractionLength(0...2)).grouping(.never))
+        }
     }
 
-    var lengthsInt: Int { max(0, Int(lengths.rounded())) }
+    var distance: Double {
+        let trimmed = distanceText
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: ",", with: "")
+        return Double(trimmed) ?? 0
+    }
 }
 
 @MainActor
@@ -255,8 +262,9 @@ enum WorkoutService {
             session.estimatedCalories = WorkoutCalorieCalculator.swimmingCalories(
                 durationMinutes: session.durationMinutes,
                 weightLbs: weight,
-                poolLength: session.poolLength,
-                segments: session.sortedSwimSegments.map { ($0.stroke, $0.lengths) }
+                segments: session.sortedSwimSegments.map {
+                    ($0.stroke, $0.meters(unit: session.swimDistanceUnit, pool: session.poolLength))
+                }
             )
         default:
             break
@@ -295,17 +303,32 @@ enum WorkoutService {
         }
     }
 
+    static func swimEditorState(for session: WorkoutSession) -> (unit: SwimDistanceUnit, drafts: [SwimSegmentDraft]) {
+        let unit = session.swimDistanceUnit
+        let drafts = session.sortedSwimSegments.map { segment in
+            if let distance = segment.distance {
+                return SwimSegmentDraft(stroke: segment.stroke, distance: distance)
+            }
+            let converted = Double(segment.lengths * session.poolLength.lengthValue)
+            return SwimSegmentDraft(stroke: segment.stroke, distance: converted > 0 ? converted : nil)
+        }
+        return (unit, drafts.isEmpty ? [SwimSegmentDraft()] : drafts)
+    }
+
     static func replaceSwimSegments(
         on session: WorkoutSession,
+        unit: SwimDistanceUnit,
         drafts: [SwimSegmentDraft],
         context: ModelContext
     ) {
+        session.swimDistanceUnit = unit
         for existing in session.swimSegments {
             context.delete(existing)
         }
         session.swimSegments = []
-        for (index, draft) in drafts.enumerated() where draft.lengthsInt > 0 {
-            let segment = SwimSegment(stroke: draft.stroke, lengths: draft.lengthsInt, sortOrder: index)
+        for (index, draft) in drafts.enumerated() where draft.distance > 0 {
+            let segment = SwimSegment(stroke: draft.stroke, lengths: 0, sortOrder: index)
+            segment.distance = draft.distance
             segment.session = session
             session.swimSegments.append(segment)
             context.insert(segment)
@@ -363,17 +386,24 @@ enum WorkoutService {
         return session
     }
 
+    static func resumeLiveStrengthSession(_ session: WorkoutSession, context: ModelContext) {
+        guard session.isLive, !session.isInProgress else { return }
+        session.resumedAt = Date()
+        session.isInProgress = true
+        try? context.save()
+    }
+
     static func finishLiveStrengthSession(
         _ session: WorkoutSession,
         context: ModelContext,
         healthKit: HealthKitService
     ) async {
         let end = Date()
+        let elapsed = session.activeElapsed(at: end)
         session.isInProgress = false
+        session.resumedAt = nil
         session.workoutEndAt = end
-        if let start = session.startedAt {
-            session.durationMinutes = max(end.timeIntervalSince(start) / 60.0, 1.0 / 60.0)
-        }
+        session.durationMinutes = max(elapsed / 60.0, 1.0 / 60.0)
         try? context.save()
         await finalizeStrengthSession(session, context: context, healthKit: healthKit)
     }

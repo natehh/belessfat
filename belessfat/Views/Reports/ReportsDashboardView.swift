@@ -22,6 +22,7 @@ struct ReportsDashboardView: View {
     @State private var calorieChartDate: Date?
     @State private var macroChartDate: Date?
     @State private var weightChartDate: Date?
+    @State private var bodyFatChartDate: Date?
     @State private var stepsChartDate: Date?
     @State private var activeCaloriesChartDate: Date?
 
@@ -44,6 +45,8 @@ struct ReportsDashboardView: View {
     @State private var goalCard: GoalCardData?
     @State private var weightSeries: [WeightEntry] = []
     @State private var weightMA: [(date: Date, value: Double)] = []
+    @State private var bodyFatSeries: [BodyFatSample] = []
+    @State private var bodyFatMA: [(date: Date, value: Double)] = []
     @State private var weeklyRows: [ReportService.WeeklySummaryRow] = []
 
     var body: some View {
@@ -75,6 +78,7 @@ struct ReportsDashboardView: View {
                             .id("reportsCharts")
                         macroChart
                         weightChart
+                        bodyFatChart
                         stepsChart
                         activeCaloriesChart
                     }
@@ -158,6 +162,14 @@ struct ReportsDashboardView: View {
         let rangeStart = DateHelpers.startOfDay(r.start)
         weightMA = MacroCalculator.movingAverage(entries: weightsForMA)
             .filter { DateHelpers.startOfDay($0.date) >= rangeStart }
+
+        let bodyFat = GoalService.bodyFatSamples(from: r.start, to: r.end, context: context)
+        bodyFatSeries = bodyFat
+        let bodyFatForMA = GoalService.bodyFatSamples(from: maLookbackStart, to: r.end, context: context)
+        bodyFatMA = MacroCalculator.movingAverage(
+            points: bodyFatForMA.map { (date: $0.date, value: $0.percent) }
+        )
+        .filter { DateHelpers.startOfDay($0.date) >= rangeStart }
 
         if let goal = GoalService.activeGoal(context: context) {
             let entries = GoalService.weightEntries(from: goal.startDate, to: Date(), context: context)
@@ -333,6 +345,7 @@ struct ReportsDashboardView: View {
             weeklyHeaderCell("Steps Avg", width: 88, color: Color.cyan.opacity(0.35))
             weeklyHeaderCell("Calorie Avg", width: 92, color: Color.orange.opacity(0.35))
             weeklyHeaderCell("Weight Avg", width: 88, color: Color.pink.opacity(0.35))
+            weeklyHeaderCell("Body Fat Avg", width: 96, color: Color.indigo.opacity(0.35))
             weeklyHeaderCell("Weight Δ %", width: 88, color: Color.yellow.opacity(0.4))
         }
     }
@@ -362,6 +375,11 @@ struct ReportsDashboardView: View {
                 background: Color.pink.opacity(striped ? 0.20 : 0.10)
             )
             weeklyBodyCell(
+                row.bodyFatAverage.map { $0.formatted(.number.precision(.fractionLength(1))) } ?? "—",
+                width: 96,
+                background: Color.indigo.opacity(striped ? 0.20 : 0.10)
+            )
+            weeklyBodyCell(
                 weightChangeLabel(row.weightChangePercent),
                 width: 88,
                 background: Color.yellow.opacity(striped ? 0.28 : 0.14)
@@ -389,6 +407,12 @@ struct ReportsDashboardView: View {
                 row.weightAverage.map { $0.formatted(.number.precision(.fractionLength(2))) } ?? "—",
                 width: 88,
                 background: Color.pink.opacity(0.4),
+                bold: true
+            )
+            weeklyBodyCell(
+                row.bodyFatAverage.map { $0.formatted(.number.precision(.fractionLength(1))) } ?? "—",
+                width: 96,
+                background: Color.indigo.opacity(0.4),
                 bold: true
             )
             weeklyBodyCell(
@@ -718,6 +742,58 @@ struct ReportsDashboardView: View {
             .chartYScale(domain: yDomain)
             .interactiveDateSelection($weightChartDate)
         }
+    }
+
+    private var bodyFatChart: some View {
+        let samples = bodyFatSeries
+        let ma = bodyFatMA
+        let yDomain = bodyFatChartYDomain(samples: samples, movingAverage: ma)
+        return interactiveChartSection(
+            title: "Body Fat",
+            subtitle: "Logged body fat and 7-day moving average"
+        ) {
+            if let date = bodyFatChartDate {
+                let logged = samples.first { DateHelpers.isSameDay($0.date, date) }
+                let avg = ma.first { DateHelpers.isSameDay($0.date, date) }
+                if logged != nil || avg != nil {
+                    chartTooltip(
+                        date: date,
+                        lines: [
+                            logged.map { ("Body fat", "\($0.percent.formatted(.number.precision(.fractionLength(1))))%", Color.primary) },
+                            avg.map { ("7-day avg", "\($0.value.formatted(.number.precision(.fractionLength(1))))%", .orange) }
+                        ].compactMap { $0 }
+                    )
+                }
+            }
+        } chart: {
+            Chart {
+                ForEach(samples) { sample in
+                    PointMark(x: .value("Date", sample.date, unit: .day), y: .value("Body Fat", sample.percent))
+                }
+                ForEach(ma, id: \.date) { point in
+                    LineMark(x: .value("Date", point.date, unit: .day), y: .value("7-day MA", point.value))
+                        .foregroundStyle(.orange)
+                }
+                if let date = bodyFatChartDate {
+                    RuleMark(x: .value("Date", date, unit: .day))
+                        .foregroundStyle(Color.primary.opacity(0.25))
+                        .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [4, 3]))
+                }
+            }
+            .chartYScale(domain: yDomain)
+            .interactiveDateSelection($bodyFatChartDate)
+        }
+    }
+
+    private func bodyFatChartYDomain(
+        samples: [BodyFatSample],
+        movingAverage: [(date: Date, value: Double)]
+    ) -> ClosedRange<Double> {
+        let values = samples.map(\.percent) + movingAverage.map(\.value)
+        guard let minValue = values.min(), let maxValue = values.max() else {
+            return 15...30
+        }
+        return (minValue - 1)...(maxValue + 1)
     }
 
     private func weightChartYDomain(

@@ -12,6 +12,8 @@ struct DiaryView: View {
     @Query(sort: \DailyHealthSnapshot.date, order: .reverse) private var healthSnapshots: [DailyHealthSnapshot]
     @Query(sort: \WeightGoal.targetDate, order: .reverse) private var weightGoals: [WeightGoal]
     @Query(sort: \WeightEntry.date, order: .reverse) private var allWeightEntries: [WeightEntry]
+    @Query(sort: \BodyFatEntry.date, order: .reverse) private var allBodyFatEntries: [BodyFatEntry]
+    @Query(sort: \ProgressPhoto.date, order: .reverse) private var allProgressPhotos: [ProgressPhoto]
     @State private var selectedDate = Date()
     @State private var addFoodMeal: MealCategory?
     @State private var showScanner = false
@@ -24,8 +26,11 @@ struct DiaryView: View {
     @State private var healthExpanded = true
     @State private var weightInput = ""
     @State private var lastLoadedWeightText = ""
+    @State private var bodyFatInput = ""
+    @State private var lastLoadedBodyFatText = ""
     @State private var weightSaveError: String?
     @State private var editingEntry: LogEntry?
+    @ObservedObject private var clipboard = DiaryClipboard.shared
 
     private var healthSnapshot: DailyHealthSnapshot? {
         healthSnapshots.first { DateHelpers.isSameDay($0.date, selectedDate) }
@@ -120,6 +125,18 @@ struct DiaryView: View {
         allWeightEntries.first { DateHelpers.isSameDay($0.date, selectedDate) }
     }
 
+    private var todaysBodyFat: BodyFatReading? {
+        GoalService.resolvedBodyFat(on: selectedDate, entries: allBodyFatEntries, photos: allProgressPhotos)
+    }
+
+    private var displayedBodyFat: BodyFatReading? {
+        todaysBodyFat ?? GoalService.mostRecentBodyFat(
+            onOrBefore: selectedDate,
+            entries: allBodyFatEntries,
+            photos: allProgressPhotos
+        )
+    }
+
     var body: some View {
         NavigationStack {
             ScrollViewReader { proxy in
@@ -198,17 +215,22 @@ struct DiaryView: View {
                             healthExpanded = true
                         }
                     } label: {
-                        HStack {
-                            Text("Activity & Weight")
-                            Spacer()
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack {
+                                Text("Activity & Weight")
+                                Spacer()
+                                Image(systemName: healthExpanded ? "chevron.down" : "chevron.right")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
                             if healthExpanded {
                                 Text("\(displayedSteps) steps · \(weightSummary)")
                                     .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.8)
                             }
-                            Image(systemName: healthExpanded ? "chevron.down" : "chevron.right")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
                         }
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .buttonStyle(.plain)
                 } footer: {
@@ -249,6 +271,11 @@ struct DiaryView: View {
                                                 }
                                                 .tint(.blue)
                                             }
+                                            Button {
+                                                clipboard.copy([entry])
+                                            } label: {
+                                                Label("Copy", systemImage: "doc.on.doc")
+                                            }
                                             Button { editingEntry = entry } label: {
                                                 Label("Edit", systemImage: "pencil")
                                             }
@@ -259,6 +286,7 @@ struct DiaryView: View {
                                             if !isViewingToday {
                                                 Button("Copy to Today") { copyEntryToToday(entry) }
                                             }
+                                            Button("Copy") { clipboard.copy([entry]) }
                                             Divider()
                                             ForEach(MealCategory.allCases) { target in
                                                 Button("Move to \(target.displayName)") {
@@ -305,9 +333,9 @@ struct DiaryView: View {
                             .buttonStyle(.borderless)
                             .accessibilityLabel("Add food to \(meal.displayName)")
 
-                            if !mealEntries.isEmpty {
+                            if !mealEntries.isEmpty || clipboard.canPaste {
                                 Menu {
-                                    if !isViewingToday {
+                                    if !isViewingToday, !mealEntries.isEmpty {
                                         Button {
                                             copyMealToToday(meal)
                                         } label: {
@@ -315,9 +343,23 @@ struct DiaryView: View {
                                         }
                                     }
                                     Button {
-                                        saveMealAsRecipe(meal, entries: mealEntries)
+                                        clipboard.copy(mealEntries)
                                     } label: {
-                                        Label("Save as Recipe", systemImage: "book.closed")
+                                        Label("Copy Meal", systemImage: "doc.on.doc")
+                                    }
+                                    .disabled(mealEntries.isEmpty)
+                                    Button {
+                                        clipboard.paste(into: meal, on: selectedDate, context: context)
+                                    } label: {
+                                        Label("Paste", systemImage: "doc.on.clipboard")
+                                    }
+                                    .disabled(!clipboard.canPaste)
+                                    if !mealEntries.isEmpty {
+                                        Button {
+                                            saveMealAsRecipe(meal, entries: mealEntries)
+                                        } label: {
+                                            Label("Save as Recipe", systemImage: "book.closed")
+                                        }
                                     }
                                 } label: {
                                     Image(systemName: "ellipsis.circle")
@@ -395,6 +437,7 @@ struct DiaryView: View {
             .onAppear {
                 consumeQuickAction()
                 loadWeightInput()
+                loadBodyFatInput()
                 #if DEBUG
                 if AppStoreScreenshotSeeder.isEnabled {
                     return
@@ -410,6 +453,7 @@ struct DiaryView: View {
             }
             .onChange(of: selectedDate) { _, newDate in
                 loadWeightInput()
+                loadBodyFatInput()
                 Task { await healthKit.sync(for: newDate, context: context) }
             }
             .onChange(of: todaysWeightEntry?.weightLbs) { _, _ in
@@ -419,6 +463,14 @@ struct DiaryView: View {
             .onChange(of: todaysWeightEntry?.recordedAt) { _, _ in
                 guard !isWeightInputDirty else { return }
                 loadWeightInput()
+            }
+            .onChange(of: todaysBodyFat?.percent) { _, _ in
+                guard !isBodyFatInputDirty else { return }
+                loadBodyFatInput()
+            }
+            .onChange(of: todaysBodyFat?.recordedAt) { _, _ in
+                guard !isBodyFatInputDirty else { return }
+                loadBodyFatInput()
             }
             .onChange(of: scenePhase) { _, phase in
                 guard phase == .active else { return }
@@ -487,13 +539,25 @@ struct DiaryView: View {
     }
 
     private var weightSummary: String {
+        let weight: String?
         if let entry = todaysWeightEntry {
-            return String(format: "%.1f lbs", entry.weightLbs)
+            weight = String(format: "%.1f lbs", entry.weightLbs)
+        } else if let recent = GoalService.mostRecentWeight(onOrBefore: selectedDate, context: context) {
+            weight = String(format: "%.1f lbs", recent)
+        } else {
+            weight = nil
         }
-        if let recent = GoalService.mostRecentWeight(onOrBefore: selectedDate, context: context) {
-            return String(format: "%.1f lbs", recent)
+        let bodyFat = displayedBodyFat.map { String(format: "%.1f%%", $0.percent) }
+        switch (weight, bodyFat) {
+        case let (weight?, bodyFat?):
+            return "\(weight) · \(bodyFat)"
+        case let (weight?, nil):
+            return weight
+        case let (nil, bodyFat?):
+            return bodyFat
+        case (nil, nil):
+            return "no weight"
         }
-        return "no weight"
     }
 
     private var netCaloriesRow: some View {
@@ -509,20 +573,40 @@ struct DiaryView: View {
     }
 
     private var weightSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Label("Weight", systemImage: "scalemass")
-                .font(.headline)
-            HStack {
-                DecimalPadTextField(text: $weightInput, placeholder: "lbs", onCommit: saveWeight)
-                    .frame(width: 80, height: 36)
-                Button("Save") { saveWeight() }
-                    .buttonStyle(.borderedProminent)
+        HStack(alignment: .top, spacing: 16) {
+            VStack(alignment: .leading, spacing: 8) {
+                Label("Weight", systemImage: "scalemass")
+                    .font(.headline)
+                HStack {
+                    DecimalPadTextField(text: $weightInput, placeholder: "lbs", onCommit: saveWeight)
+                        .frame(maxWidth: 88, minHeight: 36, maxHeight: 36)
+                    Button("Save") { saveWeight() }
+                        .buttonStyle(.borderedProminent)
+                }
+                if todaysWeightEntry?.source == .healthKit {
+                    Text("From HealthKit")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
-            if todaysWeightEntry?.source == .healthKit {
-                Text("From HealthKit")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            VStack(alignment: .leading, spacing: 8) {
+                Label("Body Fat", systemImage: "percent")
+                    .font(.headline)
+                HStack {
+                    DecimalPadTextField(text: $bodyFatInput, placeholder: "%", onCommit: saveBodyFat)
+                        .frame(maxWidth: 88, minHeight: 36, maxHeight: 36)
+                    Button("Save") { saveBodyFat() }
+                        .buttonStyle(.borderedProminent)
+                }
+                if let caption = todaysBodyFat?.source.diaryCaption {
+                    Text(caption)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
@@ -544,6 +628,26 @@ struct DiaryView: View {
         guard let lbs = Double(weightInput) else { return }
         GoalService.saveWeight(lbs, for: selectedDate, context: context)
         loadWeightInput()
+    }
+
+    private var isBodyFatInputDirty: Bool {
+        bodyFatInput != lastLoadedBodyFatText
+    }
+
+    private func loadBodyFatInput() {
+        if let reading = todaysBodyFat {
+            bodyFatInput = String(format: "%.1f", reading.percent)
+        } else {
+            bodyFatInput = ""
+        }
+        lastLoadedBodyFatText = bodyFatInput
+    }
+
+    private func saveBodyFat() {
+        defer { dismissKeyboard() }
+        guard let percent = Double(bodyFatInput), percent > 0, percent < 100 else { return }
+        GoalService.saveBodyFat(percent, for: selectedDate, context: context)
+        loadBodyFatInput()
     }
 
     private func dismissKeyboard() {

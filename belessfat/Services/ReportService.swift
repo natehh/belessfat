@@ -84,6 +84,8 @@ enum ReportService {
         var stepsAverage: Double?
         var calorieAverage: Double?
         var weightAverage: Double?
+        /// Average of days in the week that have a body-fat reading.
+        var bodyFatAverage: Double?
         /// Week-over-week % change vs previous week's weight average. Nil for the first week.
         var weightChangePercent: Double?
     }
@@ -103,6 +105,8 @@ enum ReportService {
         var rows: [WeeklySummaryRow] = []
         var previousWeightAverage: Double?
         var weekNumber = 1
+        let bodyFatEntries = (try? context.fetch(FetchDescriptor<BodyFatEntry>())) ?? []
+        let progressPhotos = (try? context.fetch(FetchDescriptor<ProgressPhoto>())) ?? []
 
         while weekStart <= rangeEnd {
             let weekEnd = DateHelpers.weekEnd(containing: weekStart, weekStartsOn: weekStartsOn)
@@ -125,6 +129,16 @@ enum ReportService {
                 ? nil
                 : weights.reduce(0, +) / Double(weights.count)
 
+            let bodyFats = GoalService.bodyFatSamples(
+                from: clampedStart,
+                to: clampedEnd,
+                entries: bodyFatEntries,
+                photos: progressPhotos
+            ).map(\.percent)
+            let bodyFatAverage = bodyFats.isEmpty
+                ? nil
+                : bodyFats.reduce(0, +) / Double(bodyFats.count)
+
             let weightChangePercent: Double?
             if let weightAverage, let previousWeightAverage, previousWeightAverage > 0 {
                 weightChangePercent = ((weightAverage - previousWeightAverage) / previousWeightAverage) * 100
@@ -139,6 +153,7 @@ enum ReportService {
                     stepsAverage: stepsAverage,
                     calorieAverage: calorieAverage,
                     weightAverage: weightAverage,
+                    bodyFatAverage: bodyFatAverage,
                     weightChangePercent: weightChangePercent
                 )
             )
@@ -161,6 +176,7 @@ enum ReportService {
         let steps = rows.compactMap(\.stepsAverage)
         let calories = rows.compactMap(\.calorieAverage)
         let weights = rows.compactMap(\.weightAverage)
+        let bodyFats = rows.compactMap(\.bodyFatAverage)
         let weeklyChanges = rows.compactMap(\.weightChangePercent)
 
         return WeeklySummaryRow(
@@ -169,6 +185,7 @@ enum ReportService {
             stepsAverage: steps.isEmpty ? nil : steps.reduce(0, +) / Double(steps.count),
             calorieAverage: calories.isEmpty ? nil : calories.reduce(0, +) / Double(calories.count),
             weightAverage: weights.isEmpty ? nil : weights.reduce(0, +) / Double(weights.count),
+            bodyFatAverage: bodyFats.isEmpty ? nil : bodyFats.reduce(0, +) / Double(bodyFats.count),
             weightChangePercent: weeklyChanges.isEmpty
                 ? nil
                 : weeklyChanges.reduce(0, +) / Double(weeklyChanges.count)

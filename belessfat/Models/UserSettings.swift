@@ -143,6 +143,40 @@ final class WeightEntry {
     }
 }
 
+struct BodyFatReading: Equatable {
+    var percent: Double
+    var recordedAt: Date
+    var source: BodyFatSource
+}
+
+@Model
+final class BodyFatEntry {
+    var id: UUID
+    var date: Date
+    var percent: Double
+    /// When this value was last set. Nil on older rows (treated as that calendar day).
+    var recordedAt: Date?
+    var sourceRaw: String?
+
+    var source: BodyFatSource {
+        get { BodyFatSource(rawValue: sourceRaw ?? "") ?? .manual }
+        set { sourceRaw = newValue.rawValue }
+    }
+
+    init(
+        date: Date,
+        percent: Double,
+        recordedAt: Date = Date(),
+        source: BodyFatSource = .manual
+    ) {
+        self.id = UUID()
+        self.date = Calendar.current.startOfDay(for: date)
+        self.percent = percent
+        self.recordedAt = recordedAt
+        self.sourceRaw = source.rawValue
+    }
+}
+
 @Model
 final class WeightGoal {
     var id: UUID

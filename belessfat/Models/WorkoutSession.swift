@@ -13,12 +13,15 @@ final class WorkoutSession {
     var treadmillSpeedMph: Double?
     var treadmillInclinePercent: Double?
     var poolLengthRaw: String?
+    var swimDistanceUnitRaw: String?
     var estimatedSteps: Int
     var estimatedCalories: Double
     var healthKitSyncId: String?
     var healthKitStepSampleId: String?
     var workoutEndAt: Date?
     var startedAt: Date?
+    /// When a finished live workout is resumed, elapsed time continues from `durationMinutes` plus time since this date.
+    var resumedAt: Date?
     var isLive: Bool = false
     var isInProgress: Bool = false
     var createdAt: Date
@@ -47,6 +50,7 @@ final class WorkoutSession {
         self.estimatedCalories = 0
         self.workoutEndAt = Date()
         self.startedAt = nil
+        self.resumedAt = nil
         self.isLive = false
         self.isInProgress = false
         self.createdAt = Date()
@@ -57,6 +61,29 @@ final class WorkoutSession {
     var poolLength: PoolLength {
         get { PoolLength(rawValue: poolLengthRaw ?? "") ?? .yards25 }
         set { poolLengthRaw = newValue.rawValue }
+    }
+
+    var swimDistanceUnit: SwimDistanceUnit {
+        get {
+            if let swimDistanceUnitRaw, let unit = SwimDistanceUnit(rawValue: swimDistanceUnitRaw) {
+                return unit
+            }
+            return poolLength == .yards25 ? .yards : .meters
+        }
+        set { swimDistanceUnitRaw = newValue.rawValue }
+    }
+
+    /// Distance typed for this swim, or the old lengths × pool length for earlier logs.
+    var swimDistanceLabel: String? {
+        let segments = sortedSwimSegments
+        guard !segments.isEmpty else { return nil }
+        if segments.contains(where: { $0.distance != nil }) {
+            let total = segments.reduce(0.0) { $0 + ($1.distance ?? 0) }
+            guard total > 0 else { return nil }
+            return swimDistanceUnit.format(total)
+        }
+        guard swimTotalLengths > 0 else { return nil }
+        return "\(swimTotalLengths) lengths · \(poolLength.distanceLabel(lengths: swimTotalLengths))"
     }
 
     var sortedSwimSegments: [SwimSegment] {
@@ -116,12 +143,23 @@ final class WorkoutSession {
         return setLogs.allSatisfy(\.isCompleted)
     }
 
-    var healthKitTimeRange: (start: Date, end: Date) {
-        if isLive, let startedAt {
-            let end = max(effectiveWorkoutEnd, startedAt.addingTimeInterval(1))
-            return (startedAt, end)
+    /// Active time, excluding any gap between finishing and resuming.
+    func activeElapsed(at now: Date = Date()) -> TimeInterval {
+        if isInProgress, let resumedAt {
+            return max(0, durationMinutes * 60 + now.timeIntervalSince(resumedAt))
         }
+        if isInProgress, let startedAt {
+            return max(0, now.timeIntervalSince(startedAt))
+        }
+        return max(0, durationMinutes * 60)
+    }
+
+    var healthKitTimeRange: (start: Date, end: Date) {
         let end = effectiveWorkoutEnd
+        if isLive {
+            let durationSec = max(durationMinutes * 60, 1)
+            return (end.addingTimeInterval(-durationSec), end)
+        }
         let durationSec = max(durationMinutes * 60, 60)
         let start = end.addingTimeInterval(-durationSec)
         return (start, end)
@@ -214,6 +252,7 @@ final class SwimSegment {
     var id: UUID
     var strokeRaw: String
     var lengths: Int
+    var distance: Double?
     var sortOrder: Int
     var session: WorkoutSession?
 
@@ -226,7 +265,15 @@ final class SwimSegment {
         self.id = UUID()
         self.strokeRaw = stroke.rawValue
         self.lengths = max(0, lengths)
+        self.distance = nil
         self.sortOrder = sortOrder
+    }
+
+    func meters(unit: SwimDistanceUnit, pool: PoolLength) -> Double {
+        if let distance {
+            return unit.meters(from: distance)
+        }
+        return Double(lengths) * pool.meters
     }
 }
 
