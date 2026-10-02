@@ -79,6 +79,9 @@
 		F00100000000000000000046 /* AIBodyFatEstimateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00200000000000000000049 /* AIBodyFatEstimateView.swift */; };
 		F00100000000000000000047 /* AppStoreScreenshotSeeder.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0020000000000000000004A /* AppStoreScreenshotSeeder.swift */; };
 		F00100000000000000000048 /* SwimSegmentsEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0020000000000000000004B /* SwimSegmentsEditor.swift */; };
+		F00100000000000000000049 /* AIMacroEstimateService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0020000000000000000004C /* AIMacroEstimateService.swift */; };
+		F0010000000000000000004A /* CursorMacroEstimateClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0020000000000000000004D /* CursorMacroEstimateClient.swift */; };
+		F0010000000000000000004B /* MenuEstimateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0020000000000000000004E /* MenuEstimateView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -158,6 +161,9 @@
 		F00200000000000000000049 /* AIBodyFatEstimateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIBodyFatEstimateView.swift; sourceTree = "<group>"; };
 		F0020000000000000000004A /* AppStoreScreenshotSeeder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStoreScreenshotSeeder.swift; sourceTree = "<group>"; };
 		F0020000000000000000004B /* SwimSegmentsEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwimSegmentsEditor.swift; sourceTree = "<group>"; };
+		F0020000000000000000004C /* AIMacroEstimateService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIMacroEstimateService.swift; sourceTree = "<group>"; };
+		F0020000000000000000004D /* CursorMacroEstimateClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CursorMacroEstimateClient.swift; sourceTree = "<group>"; };
+		F0020000000000000000004E /* MenuEstimateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuEstimateView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -266,6 +272,8 @@
 				F00200000000000000000046 /* DirectAIClient.swift */,
 				F00200000000000000000047 /* AIBodyFatEstimateService.swift */,
 				F00200000000000000000048 /* CursorBodyFatEstimateClient.swift */,
+				F0020000000000000000004C /* AIMacroEstimateService.swift */,
+				F0020000000000000000004D /* CursorMacroEstimateClient.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -315,6 +323,7 @@
 				F00200000000000000000016 /* RecipeViews.swift */,
 				F00200000000000000000025 /* CustomFoodFormView.swift */,
 				F0020000000000000000003D /* AIFoodEstimateView.swift */,
+				F0020000000000000000004E /* MenuEstimateView.swift */,
 				F0020000000000000000003E /* FoodLibraryView.swift */,
 			);
 			path = Food;
@@ -521,6 +530,9 @@
 				F00100000000000000000045 /* CursorBodyFatEstimateClient.swift in Sources */,
 				F00100000000000000000046 /* AIBodyFatEstimateView.swift in Sources */,
 				F00100000000000000000047 /* AppStoreScreenshotSeeder.swift in Sources */,
+				F00100000000000000000049 /* AIMacroEstimateService.swift in Sources */,
+				F0010000000000000000004A /* CursorMacroEstimateClient.swift in Sources */,
+				F0010000000000000000004B /* MenuEstimateView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -592,7 +604,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.4;
+				MARKETING_VERSION = 1.5;
 				PRODUCT_BUNDLE_IDENTIFIER = com.belessfat.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -622,7 +634,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.4;
+				MARKETING_VERSION = 1.5;
 				PRODUCT_BUNDLE_IDENTIFIER = com.belessfat.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";

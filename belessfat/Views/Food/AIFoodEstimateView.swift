@@ -8,6 +8,25 @@ private struct ParsedEstimateItem: Identifiable {
     let recipe: ParsedWebRecipe
 }
 
+private struct MacroReviewPresentation: Identifiable {
+    let id = UUID()
+    let estimate: MacroEstimate
+}
+
+private enum FoodEstimateMode: String, CaseIterable, Identifiable {
+    case ingredients
+    case quick
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .ingredients: return "Ingredients"
+        case .quick: return "Quick"
+        }
+    }
+}
+
 struct AIFoodEstimateView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
@@ -15,11 +34,13 @@ struct AIFoodEstimateView: View {
     let defaultMeal: MealCategory
     let onDone: () -> Void
 
+    @State private var mode: FoodEstimateMode = .ingredients
     @State private var foodNameHint = ""
     @State private var promptCopied = false
     @State private var replyText = ""
     @State private var importError: String?
     @State private var parsedReview: ParsedEstimateItem?
+    @State private var macroReview: MacroReviewPresentation?
     @State private var showCamera = false
     @State private var selectedLibraryItem: PhotosPickerItem?
     @State private var isEstimating = false
@@ -33,12 +54,34 @@ struct AIFoodEstimateView: View {
     }
 
     private var currentPrompt: String {
-        AIFoodEstimateService.prompt(foodNameHint: trimmedFoodNameHint)
+        switch mode {
+        case .ingredients:
+            return AIFoodEstimateService.prompt(foodNameHint: trimmedFoodNameHint)
+        case .quick:
+            return AIMacroEstimateService.quickPrompt(foodNameHint: trimmedFoodNameHint)
+        }
     }
 
     var body: some View {
         NavigationStack {
             Form {
+                Section {
+                    Picker("Estimate", selection: $mode) {
+                        ForEach(FoodEstimateMode.allCases) { item in
+                            Text(item.title).tag(item)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .disabled(isEstimating)
+                    .onChange(of: mode) { _, _ in
+                        promptCopied = false
+                    }
+                } footer: {
+                    Text(mode == .quick
+                        ? "Quick estimate saves one custom food from the AI’s calories and macros. Ingredients still matches each item to the food database."
+                        : "Ingredients breaks the meal into foods and amounts, then matches them to the food database.")
+                }
+
                 Section {
                     TextField("e.g. Chipotle chicken burrito bowl", text: $foodNameHint)
                         .textInputAutocapitalization(.sentences)
@@ -76,6 +119,15 @@ struct AIFoodEstimateView: View {
                         }
                         .disabled(isEstimating)
 
+                        if mode == .quick {
+                            Button {
+                                Task { await estimateQuick(image: nil) }
+                            } label: {
+                                Label("Estimate from Name", systemImage: "sparkles")
+                            }
+                            .disabled(trimmedFoodNameHint == nil || isEstimating)
+                        }
+
                         if isEstimating, !estimateStatus.isEmpty {
                             Text(estimateStatus)
                                 .font(.caption)
@@ -84,7 +136,9 @@ struct AIFoodEstimateView: View {
                     } header: {
                         Text("In-app estimate")
                     } footer: {
-                        Text("Uses your AI API key from Settings. The AI identifies foods and amounts; you review USDA / Open Food Facts matches before saving.")
+                        Text(mode == .quick
+                            ? "Uses your AI API key from Settings. You review the serving, then save it as a custom food."
+                            : "Uses your AI API key from Settings. The AI identifies foods and amounts; you review USDA / Open Food Facts matches before saving.")
                     }
                 } else {
                     Section {
@@ -101,7 +155,9 @@ struct AIFoodEstimateView: View {
                 } header: {
                     Text(hasAPIKey ? "Clipboard fallback" : "How it works")
                 } footer: {
-                    Text("The AI should reply with JSON ingredients. You’ll match them to the food database and review before saving.")
+                    Text(mode == .quick
+                        ? "The AI should reply with one serving’s calories and macros. You review it, then save it as a custom food."
+                        : "The AI should reply with JSON ingredients. You’ll match them to the food database and review before saving.")
                 }
 
                 Section("Prompt") {
@@ -110,7 +166,12 @@ struct AIFoodEstimateView: View {
                         .foregroundStyle(.secondary)
                         .textSelection(.enabled)
                     Button {
-                        AIFoodEstimateService.copyPromptToClipboard(foodNameHint: trimmedFoodNameHint)
+                        switch mode {
+                        case .ingredients:
+                            AIFoodEstimateService.copyPromptToClipboard(foodNameHint: trimmedFoodNameHint)
+                        case .quick:
+                            AIMacroEstimateService.copyQuickPromptToClipboard(foodNameHint: trimmedFoodNameHint)
+                        }
                         promptCopied = true
                     } label: {
                         Label(
@@ -206,6 +267,24 @@ struct AIFoodEstimateView: View {
                     )
                 }
             }
+            .sheet(item: $macroReview) { item in
+                NavigationStack {
+                    MacroEstimateReviewView(
+                        title: "Quick Estimate",
+                        brand: nil,
+                        items: [item.estimate],
+                        showsSelection: false,
+                        selectedDate: selectedDate,
+                        defaultMeal: defaultMeal,
+                        onCancel: { macroReview = nil },
+                        onFinished: {
+                            macroReview = nil
+                            dismiss()
+                            onDone()
+                        }
+                    )
+                }
+            }
             .onAppear {
                 hasAPIKey = AIAssistant.hasConfiguredKey
             }
@@ -214,8 +293,14 @@ struct AIFoodEstimateView: View {
 
     private func importReply() async {
         do {
-            let draft = try AIFoodEstimateService.parse(replyText)
-            await matchAndReview(draft)
+            switch mode {
+            case .ingredients:
+                let draft = try AIFoodEstimateService.parse(replyText)
+                await matchAndReview(draft)
+            case .quick:
+                let estimate = try AIMacroEstimateService.parseQuick(replyText)
+                macroReview = MacroReviewPresentation(estimate: estimate)
+            }
         } catch {
             let detail = error.localizedDescription
             importError = "\(detail) If Paste didn’t work, tap the text box and paste manually."
@@ -243,8 +328,44 @@ struct AIFoodEstimateView: View {
             isEstimating = false
             estimateStatus = ""
         }
+        switch mode {
+        case .ingredients:
+            do {
+                let draft = try await AIAssistant.estimateFood(
+                    from: image,
+                    foodNameHint: trimmedFoodNameHint,
+                    onStatus: { status in
+                        Task { @MainActor in
+                            estimateStatus = status
+                        }
+                    }
+                )
+                await matchAndReview(draft)
+            } catch {
+                importError = error.localizedDescription
+            }
+        case .quick:
+            await estimateQuick(image: image)
+        }
+    }
+
+    private func estimateQuick(image: UIImage?) async {
+        guard AIAssistant.hasConfiguredKey else {
+            importError = AIAssistant.AssistantError.missingAPIKey.localizedDescription
+            return
+        }
+        guard image != nil || trimmedFoodNameHint != nil else {
+            importError = "Add a food name or a photo to estimate."
+            return
+        }
+        isEstimating = true
+        estimateStatus = image == nil ? "Sending to AI…" : "Preparing photo…"
+        defer {
+            isEstimating = false
+            estimateStatus = ""
+        }
         do {
-            let draft = try await AIAssistant.estimateFood(
+            let estimate = try await AIAssistant.estimateFoodMacros(
                 from: image,
                 foodNameHint: trimmedFoodNameHint,
                 onStatus: { status in
@@ -253,7 +374,7 @@ struct AIFoodEstimateView: View {
                     }
                 }
             )
-            await matchAndReview(draft)
+            macroReview = MacroReviewPresentation(estimate: estimate)
         } catch {
             importError = error.localizedDescription
         }

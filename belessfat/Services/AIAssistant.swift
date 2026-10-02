@@ -135,4 +135,79 @@ enum AIAssistant {
             return try AIBodyFatEstimateService.parse(text)
         }
     }
+
+    static func estimateFoodMacros(
+        from image: UIImage?,
+        foodNameHint: String?,
+        onStatus: @escaping @Sendable (String) -> Void
+    ) async throws -> MacroEstimate {
+        let prompt = AIMacroEstimateService.quickPrompt(foodNameHint: foodNameHint)
+        let images = image.map { [$0] } ?? []
+        let text = try await completeMacro(kind: .quickFood, prompt: prompt, images: images, onStatus: onStatus)
+        return try AIMacroEstimateService.parseQuick(text)
+    }
+
+    static func lookupMenu(
+        menuURL: String,
+        images: [UIImage] = [],
+        onStatus: @escaping @Sendable (String) -> Void
+    ) async throws -> MenuAIResponse {
+        let prompt = AIMacroEstimateService.discoverPrompt(menuURL: menuURL, photoCount: images.count)
+        let text = try await completeMacro(kind: .menu, prompt: prompt, images: images, onStatus: onStatus)
+        return try AIMacroEstimateService.parseMenu(text)
+    }
+
+    static func estimateMenu(
+        menuURL: String?,
+        restaurant: String?,
+        requestedItemsText: String?,
+        items: [MenuItemChoice],
+        pastedText: String?,
+        images: [UIImage],
+        onStatus: @escaping @Sendable (String) -> Void
+    ) async throws -> MenuAIResponse {
+        let prompt = AIMacroEstimateService.estimatePrompt(
+            menuURL: menuURL,
+            restaurant: restaurant,
+            requestedItemsText: requestedItemsText,
+            items: items,
+            pastedText: pastedText
+        )
+        let text = try await completeMacro(kind: .menu, prompt: prompt, images: images, onStatus: onStatus)
+        return try AIMacroEstimateService.parseMenu(text)
+    }
+
+    private static func completeMacro(
+        kind: CursorMacroEstimateClient.Kind,
+        prompt: String,
+        images: [UIImage],
+        onStatus: @escaping @Sendable (String) -> Void
+    ) async throws -> String {
+        let provider = AIProviderStore.selected
+        guard let apiKey = AIProviderStore.apiKey(for: provider), !apiKey.isEmpty else {
+            throw AssistantError.missingAPIKey
+        }
+        switch provider {
+        case .cursor:
+            return try await CursorMacroEstimateClient.shared.complete(
+                kind: kind,
+                prompt: prompt,
+                images: images,
+                apiKey: apiKey,
+                onStatus: onStatus
+            )
+        case .openai, .anthropic, .gemini:
+            onStatus(images.isEmpty ? "Sending to AI…" : "Preparing photos…")
+            let maxCount = kind == .menu ? 8 : 4
+            let payloads = images.isEmpty ? [] : try DirectAIClient.jpegPayloads(from: images, maxCount: maxCount)
+            onStatus("Sending to AI…")
+            return try await DirectAIClient.shared.complete(
+                provider: provider,
+                apiKey: apiKey,
+                prompt: prompt,
+                images: payloads,
+                onStatus: onStatus
+            )
+        }
+    }
 }

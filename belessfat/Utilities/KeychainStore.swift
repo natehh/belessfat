@@ -115,10 +115,42 @@ enum BodyFatEstimateAgentStore {
     }
 }
 
+enum QuickFoodEstimateAgentStore {
+    private static let agentIdKey = "cursorQuickFoodEstimateAgentId"
+
+    static var agentId: String? {
+        get { UserDefaults.standard.string(forKey: agentIdKey) }
+        set {
+            if let newValue, !newValue.isEmpty {
+                UserDefaults.standard.set(newValue, forKey: agentIdKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: agentIdKey)
+            }
+        }
+    }
+}
+
+enum MenuEstimateAgentStore {
+    private static let agentIdKey = "cursorMenuEstimateAgentId"
+
+    static var agentId: String? {
+        get { UserDefaults.standard.string(forKey: agentIdKey) }
+        set {
+            if let newValue, !newValue.isEmpty {
+                UserDefaults.standard.set(newValue, forKey: agentIdKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: agentIdKey)
+            }
+        }
+    }
+}
+
 enum CursorStandingAgents {
     static func clearAll() {
         FoodEstimateAgentStore.agentId = nil
         RecipeImportAgentStore.agentId = nil
         BodyFatEstimateAgentStore.agentId = nil
+        QuickFoodEstimateAgentStore.agentId = nil
+        MenuEstimateAgentStore.agentId = nil
     }
 }

@@ -10,8 +10,8 @@ actor CursorCloudAgentClient {
 
     init() {
         let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 300
-        config.timeoutIntervalForResource = 900
+        config.timeoutIntervalForRequest = 180
+        config.timeoutIntervalForResource = 3600
         config.waitsForConnectivity = true
         config.httpAdditionalHeaders = [
             "Accept": "application/json"
@@ -41,7 +41,7 @@ actor CursorCloudAgentClient {
             case .decoding(let message):
                 return message
             case .timedOut:
-                return "AI took too long to respond. Try again in a moment."
+                return "The agent is still working, but the app stopped waiting. You can paste its reply, or try again."
             case .emptyResult:
                 return "AI returned an empty reply."
             }
@@ -99,12 +99,19 @@ actor CursorCloudAgentClient {
             }
         }
         let body: [String: Any] = ["prompt": promptBody]
-        let data = try await post(path: "agents/\(agentId)/runs", apiKey: apiKey, body: body, timeout: 180)
-        let decoded = try JSONDecoder().decode(CreateRunResponse.self, from: data)
-        guard let runId = decoded.resolvedRunId else {
-            throw AgentError.decoding("Missing run id: \(String(data: data, encoding: .utf8) ?? "")")
+        do {
+            let data = try await post(path: "agents/\(agentId)/runs", apiKey: apiKey, body: body, timeout: 180)
+            let decoded = try JSONDecoder().decode(CreateRunResponse.self, from: data)
+            guard let runId = decoded.resolvedRunId else {
+                throw AgentError.decoding("Missing run id: \(String(data: data, encoding: .utf8) ?? "")")
+            }
+            return runId
+        } catch AgentError.timedOut {
+            if let runId = try? await inProgressRunId(apiKey: apiKey, agentId: agentId) {
+                return runId
+            }
+            throw AgentError.timedOut
         }
-        return runId
     }
 
     func awaitAssistantText(
@@ -249,7 +256,7 @@ actor CursorCloudAgentClient {
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
         request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
-        request.timeoutInterval = 600
+        request.timeoutInterval = 180
         applyAuth(apiKey, to: &request)
 
         let (bytes, response) = try await session.bytes(for: request)
@@ -293,28 +300,71 @@ actor CursorCloudAgentClient {
         runId: String,
         onStatus: @escaping @Sendable (String) -> Void
     ) async throws -> String {
-        let maxAttempts = 150
-        for attempt in 1...maxAttempts {
-            let run = try await getRun(apiKey: apiKey, agentId: agentId, runId: runId)
-            let status = run.status ?? "unknown"
-            onStatus("Run status: \(status)…")
-
-            if run.isTerminal {
-                if let text = run.assistantText, !text.isEmpty {
-                    return text
+        let deadline = Date().addingTimeInterval(45 * 60)
+        let started = Date()
+        var pause: UInt64 = 2_000_000_000
+        while Date() < deadline {
+            do {
+                let run = try await getRun(apiKey: apiKey, agentId: agentId, runId: runId)
+                let status = run.status ?? "unknown"
+                if run.isTerminal {
+                    if let text = run.assistantText, !text.isEmpty {
+                        return text
+                    }
+                    if run.isSuccess {
+                        throw AgentError.emptyResult
+                    }
+                    throw AgentError.httpStatus(0, "Agent run ended with status \(status)")
                 }
-                if run.isSuccess {
-                    throw AgentError.emptyResult
-                }
-                throw AgentError.httpStatus(0, "Agent run ended with status \(status)")
+                onStatus("Agent is still working (\(elapsedLabel(since: started)), \(status.lowercased()))…")
+            } catch let error as URLError where error.code == .timedOut {
+                onStatus("Still waiting on the agent (\(elapsedLabel(since: started)))…")
+            } catch AgentError.timedOut {
+                onStatus("Still waiting on the agent (\(elapsedLabel(since: started)))…")
+            } catch {
+                throw error
             }
 
-            try await Task.sleep(nanoseconds: 2_000_000_000)
-            if attempt == maxAttempts {
-                throw AgentError.timedOut
+            try await Task.sleep(nanoseconds: pause)
+            if Date().timeIntervalSince(started) > 30 {
+                pause = 5_000_000_000
             }
         }
         throw AgentError.timedOut
+    }
+
+    private func elapsedLabel(since start: Date) -> String {
+        let seconds = max(0, Int(Date().timeIntervalSince(start)))
+        let minutes = seconds / 60
+        let remainder = seconds % 60
+        if minutes == 0 { return "\(remainder)s" }
+        return "\(minutes)m \(remainder)s"
+    }
+
+    /// The standing agent's current run, when a create-run call timed out after the agent had already started.
+    private func inProgressRunId(apiKey: String, agentId: String) async throws -> String? {
+        let url = baseURL
+            .appendingPathComponent("agents")
+            .appendingPathComponent(agentId)
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.timeoutInterval = 30
+        applyAuth(apiKey, to: &request)
+        let (data, response) = try await session.data(for: request)
+        try throwIfNeeded(response: response, data: data)
+        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        let runId = stringValue(json["latestRunId"])
+            ?? stringValue((json["agent"] as? [String: Any])?["latestRunId"])
+            ?? stringValue((json["run"] as? [String: Any])?["id"])
+        guard let runId, !runId.isEmpty else { return nil }
+        let run = try await getRun(apiKey: apiKey, agentId: agentId, runId: runId)
+        return run.isTerminal ? nil : runId
+    }
+
+    private func stringValue(_ value: Any?) -> String? {
+        guard let text = value as? String else { return nil }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     private func handleSSEEvent(name: String, data: String, assembled: inout String) {

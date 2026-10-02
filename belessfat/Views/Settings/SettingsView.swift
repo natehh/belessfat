@@ -611,7 +611,7 @@ struct AIAPIKeysSettingsView: View {
             } header: {
                 Text("Active provider")
             } footer: {
-                Text("In-app food estimates and recipe import use this provider’s key.")
+                Text("In-app food estimates, menu estimates, and recipe import use this provider’s key.")
             }
 
             Section {

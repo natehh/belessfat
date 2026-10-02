@@ -423,6 +423,7 @@ struct FoodSearchView: View {
     @State private var isPreparingFood = false
     @State private var showCustomFood = false
     @State private var showAIEstimate = false
+    @State private var showMenuEstimate = false
     @State private var showScanner = false
     @State private var showLabelScan = false
     @State private var showRecipes = false
@@ -482,6 +483,7 @@ struct FoodSearchView: View {
                         Button("Scan Barcode") { showScanner = true }
                         Button("Scan Nutrition Label") { showLabelScan = true }
                         Button("Estimate with AI") { showAIEstimate = true }
+                        Button("Estimate Menu") { showMenuEstimate = true }
                         Button("Custom Food") { showCustomFood = true }
                         Button("Recipes") { showRecipes = true }
                     } label: {
@@ -519,6 +521,13 @@ struct FoodSearchView: View {
             }
             .sheet(isPresented: $showAIEstimate) {
                 AIFoodEstimateView(
+                    selectedDate: selectedDate,
+                    defaultMeal: meal,
+                    onDone: { dismiss() }
+                )
+            }
+            .sheet(isPresented: $showMenuEstimate) {
+                MenuEstimateView(
                     selectedDate: selectedDate,
                     defaultMeal: meal,
                     onDone: { dismiss() }
