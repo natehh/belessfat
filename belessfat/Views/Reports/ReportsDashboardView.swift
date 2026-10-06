@@ -19,6 +19,8 @@ struct ReportsDashboardView: View {
     @State private var showComparison = false
     @State private var showExport = false
     @State private var tdeeMethodologyExpanded = false
+    @State private var tdeeDaysExpanded = false
+    @State private var tdeeExclusionSnapshot: Set<Date> = []
     @State private var calorieChartDate: Date?
     @State private var macroChartDate: Date?
     @State private var weightChartDate: Date?
@@ -41,7 +43,7 @@ struct ReportsDashboardView: View {
     @State private var rows: [ReportService.DailyReportRow] = []
     @State private var averages: ReportService.DailyReportRow?
     @State private var comparison: ReportService.PeriodComparison?
-    @State private var tdee: TDEECalculator.Estimate?
+    @State private var tdee: TDEECalculator.Result?
     @State private var goalCard: GoalCardData?
     @State private var weightSeries: [WeightEntry] = []
     @State private var weightMA: [(date: Date, value: Double)] = []
@@ -202,6 +204,10 @@ struct ReportsDashboardView: View {
 
     private func recomputeTDEE() {
         tdee = TDEECalculator.estimate(context: context)
+    }
+
+    private func currentExcludedDays(in report: TDEECalculator.Result) -> Set<Date> {
+        Set(report.days.filter { !$0.isIncluded }.map(\.date))
     }
 
     private var timeframePicker: some View {
@@ -547,44 +553,114 @@ struct ReportsDashboardView: View {
         .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 
-    private func tdeeCard(_ tdee: TDEECalculator.Estimate) -> some View {
+    private func tdeeCard(_ report: TDEECalculator.Result) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Estimated TDEE")
-                .font(.headline)
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text("\(Int(tdee.estimatedTDEE.rounded()))")
-                    .font(.largeTitle.weight(.bold))
-                Text("kcal/day to maintain weight")
+            HStack(alignment: .firstTextBaseline) {
+                Text("Estimated TDEE")
+                    .font(.headline)
+                Spacer()
+                if !report.usesAllDays {
+                    Text("Some days excluded")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.orange)
+                }
+            }
+            if let tdee = report.estimate {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text("\(Int(tdee.estimatedTDEE.rounded()))")
+                        .font(.largeTitle.weight(.bold))
+                    Text("kcal/day to maintain weight")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+
+                if tdee.isProvisional {
+                    Text("Estimate is still stabilizing — log food and weight regularly over the next week for a firmer number.")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+
+                VStack(spacing: 8) {
+                    LabeledContent("You averaged") {
+                        Text("\(Int(tdee.averageDailyCalories.rounded())) kcal eaten/day")
+                    }
+                    LabeledContent("Weight trend") {
+                        Text(tdee.weightTrendLabel)
+                    }
+                    LabeledContent("Compared to maintenance") {
+                        Text(tdee.eatVsBurnLabel)
+                            .foregroundStyle(tdee.calorieGap > 50 ? .orange : (tdee.calorieGap < -50 ? .green : .primary))
+                    }
+                }
+                .font(.subheadline)
+            } else {
+                Text("Not enough included days to estimate. Open How this is calculated and include more days.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
 
-            if tdee.isProvisional {
-                Text("Estimate is still stabilizing — log food and weight regularly over the next week for a firmer number.")
-                    .font(.caption)
-                    .foregroundStyle(.orange)
-            }
-
-            VStack(spacing: 8) {
-                LabeledContent("You averaged") {
-                    Text("\(Int(tdee.averageDailyCalories.rounded())) kcal eaten/day")
-                }
-                LabeledContent("Weight trend") {
-                    Text(tdee.weightTrendLabel)
-                }
-                LabeledContent("Compared to maintenance") {
-                    Text(tdee.eatVsBurnLabel)
-                        .foregroundStyle(tdee.calorieGap > 50 ? .orange : (tdee.calorieGap < -50 ? .green : .primary))
-                }
-            }
-            .font(.subheadline)
-
             DisclosureGroup(isExpanded: $tdeeMethodologyExpanded) {
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("Uses the last \(tdee.lookbackDays) days (\(tdee.dayCount) days with food logged, \(tdee.weightEntryCount) weight logs).")
+                    if let tdee = report.estimate {
+                        Text("Uses the last \(tdee.lookbackDays) days (\(tdee.dayCount) days with food logged, \(tdee.weightEntryCount) weight logs).")
+                    } else {
+                        Text("Uses the last \(report.lookbackDays) days. Include at least 3 days with food and 2 weigh-ins.")
+                    }
                     Text("Intake is the average of days with food logged (empty days are skipped, not counted as zero). Weight trend is a linear fit on 7-day smoothed weights, so a one-off weigh-in does not jump the number.")
                     Text("TDEE = average intake − (weight trend × 3,500 kcal/lb). As the 28-day window rolls forward, real changes show up over days rather than weeks.")
                     Text("Example: eating 2,000 kcal/day while losing 1 lb/week implies about 2,500 kcal/day maintenance.")
+                    DisclosureGroup(isExpanded: $tdeeDaysExpanded) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Uncheck a day to leave that day’s food and weight out. New days start included, and days older than \(report.lookbackDays) drop off on their own.")
+                            HStack {
+                                Button("Reset") {
+                                    TDEEExcludedDays.replace(with: tdeeExclusionSnapshot)
+                                    recomputeTDEE()
+                                }
+                                .disabled(currentExcludedDays(in: report) == tdeeExclusionSnapshot)
+                                Spacer()
+                                Button("Select All") {
+                                    TDEEExcludedDays.replace(with: [])
+                                    recomputeTDEE()
+                                }
+                                .disabled(report.usesAllDays)
+                            }
+                            .font(.subheadline)
+                            .buttonStyle(.borderless)
+                            .foregroundStyle(.primary)
+                            ForEach(report.days) { day in
+                                Button {
+                                    TDEEExcludedDays.setIncluded(!day.isIncluded, day: day.date)
+                                    recomputeTDEE()
+                                } label: {
+                                    HStack(alignment: .top, spacing: 10) {
+                                        Image(systemName: day.isIncluded ? "checkmark.circle.fill" : "circle")
+                                            .foregroundStyle(day.isIncluded ? Color.accentColor : Color.secondary)
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(day.date.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day()))
+                                                .foregroundStyle(.primary)
+                                            Text(day.detail)
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                        }
+                                        Spacer(minLength: 0)
+                                    }
+                                }
+                                .buttonStyle(.plain)
+                                .font(.subheadline)
+                            }
+                        }
+                        .padding(.top, 4)
+                    } label: {
+                        Text("Days used")
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(.primary)
+                    }
+                    .onChange(of: tdeeDaysExpanded) { _, isExpanded in
+                        if isExpanded {
+                            tdeeExclusionSnapshot = TDEEExcludedDays.current()
+                        }
+                    }
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)
