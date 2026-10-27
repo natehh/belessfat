@@ -175,6 +175,9 @@ struct RecipeDetailView: View {
             }
         }
         .navigationTitle(recipe.name)
+        .shareFile(suggestedName: recipe.name) {
+            FoodShareService.document(for: recipe)
+        }
         .confirmationDialog("Delete Recipe?", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
             Button("Delete", role: .destructive) {
                 FoodService.deleteRecipe(recipe, context: context)

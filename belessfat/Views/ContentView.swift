@@ -71,6 +71,7 @@ struct WorkoutTabShell: View {
 struct ContentView: View {
     @Environment(\.modelContext) private var context
     @EnvironmentObject private var quickActions: QuickActionRouter
+    @EnvironmentObject private var shareImport: ShareImportRouter
     @AppStorage("appSection") private var appSectionRaw = AppSection.food.rawValue
     #if DEBUG
     @State private var showScreenshotAI = false
@@ -102,6 +103,25 @@ struct ContentView: View {
             case .workout:
                 WorkoutTabShell()
             }
+        }
+        .sheet(isPresented: Binding(
+            get: { shareImport.pending != nil },
+            set: { if !$0 { shareImport.pending = nil } }
+        )) {
+            if let document = shareImport.pending {
+                FoodShareImportView(document: document)
+            }
+        }
+        .alert(
+            "Couldn't open share",
+            isPresented: Binding(
+                get: { shareImport.unreadableMessage != nil },
+                set: { if !$0 { shareImport.unreadableMessage = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(shareImport.unreadableMessage ?? "")
         }
         .onChange(of: quickActions.pendingMeal) { _, meal in
             guard meal != nil else { return }

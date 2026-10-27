@@ -74,6 +74,47 @@
 	<dict/>
 	<key>UIRequiresFullScreen</key>
 	<true/>
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>belessfat food share</string>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>LSHandlerRank</key>
+			<string>Owner</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>com.belessfat.foodshare</string>
+			</array>
+			<key>CFBundleTypeExtensions</key>
+			<array>
+				<string>belessfat</string>
+			</array>
+		</dict>
+	</array>
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.belessfat.foodshare</string>
+			<key>UTTypeDescription</key>
+			<string>belessfat food share</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>belessfat</string>
+				</array>
+				<key>public.mime-type</key>
+				<string>application/vnd.belessfat.share+json</string>
+			</dict>
+		</dict>
+	</array>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>

@@ -346,6 +346,9 @@ struct CustomFoodDetailView: View {
         }
         .navigationTitle(food.displayName)
         .navigationBarTitleDisplayMode(.inline)
+        .shareFile(suggestedName: food.name) {
+            FoodShareService.document(for: food)
+        }
         .sheet(isPresented: $showLog) {
             let amount = DiaryService.loggingAmount(for: food, context: context)
             LogFoodSheet(
@@ -459,6 +462,9 @@ struct RecipeLibraryDetailView: View {
         }
         .navigationTitle(recipe.name)
         .navigationBarTitleDisplayMode(.inline)
+        .shareFile(suggestedName: recipe.name) {
+            FoodShareService.document(for: recipe)
+        }
         .sheet(isPresented: $showLog) {
             let amount = DiaryService.loggingAmount(for: recipe, context: context)
             NavigationStack {

@@ -20,6 +20,12 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         if let shortcutItem = options.shortcutItem {
             QuickActionRouter.shared.handle(shortcutItem)
         }
+        for context in options.urlContexts {
+            guard let capture = FoodShareOpener.capture(context.url) else { continue }
+            Task { @MainActor in
+                ShareImportRouter.shared.accept(capture)
+            }
+        }
         let configuration = UISceneConfiguration(
             name: "Default Configuration",
             sessionRole: connectingSceneSession.role
@@ -38,6 +44,15 @@ final class ShortcutSceneDelegate: UIResponder, UIWindowSceneDelegate {
         QuickActionRouter.shared.handle(shortcutItem)
         completionHandler(true)
     }
+
+    func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
+        for context in URLContexts {
+            guard let capture = FoodShareOpener.capture(context.url) else { continue }
+            Task { @MainActor in
+                ShareImportRouter.shared.accept(capture)
+            }
+        }
+    }
 }
 
 @main
@@ -51,7 +66,12 @@ struct BelessfatApp: App {
             ContentView()
                 .environmentObject(healthKit)
                 .environmentObject(QuickActionRouter.shared)
+                .environmentObject(ShareImportRouter.shared)
                 .preferredColorScheme(colorScheme)
+                .onOpenURL { url in
+                    guard let capture = FoodShareOpener.capture(url) else { return }
+                    ShareImportRouter.shared.accept(capture)
+                }
         }
         .modelContainer(for: [
             Food.self,

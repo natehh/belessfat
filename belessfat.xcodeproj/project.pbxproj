@@ -82,6 +82,8 @@
 		F00100000000000000000049 /* AIMacroEstimateService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0020000000000000000004C /* AIMacroEstimateService.swift */; };
 		F0010000000000000000004A /* CursorMacroEstimateClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0020000000000000000004D /* CursorMacroEstimateClient.swift */; };
 		F0010000000000000000004B /* MenuEstimateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0020000000000000000004E /* MenuEstimateView.swift */; };
+		F0010000000000000000004F /* FoodShareService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0020000000000000000004F /* FoodShareService.swift */; };
+		F00100000000000000000050 /* FoodShareImportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00200000000000000000050 /* FoodShareImportView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -164,6 +166,8 @@
 		F0020000000000000000004C /* AIMacroEstimateService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIMacroEstimateService.swift; sourceTree = "<group>"; };
 		F0020000000000000000004D /* CursorMacroEstimateClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CursorMacroEstimateClient.swift; sourceTree = "<group>"; };
 		F0020000000000000000004E /* MenuEstimateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuEstimateView.swift; sourceTree = "<group>"; };
+		F0020000000000000000004F /* FoodShareService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FoodShareService.swift; sourceTree = "<group>"; };
+		F00200000000000000000050 /* FoodShareImportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FoodShareImportView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -274,6 +278,7 @@
 				F00200000000000000000048 /* CursorBodyFatEstimateClient.swift */,
 				F0020000000000000000004C /* AIMacroEstimateService.swift */,
 				F0020000000000000000004D /* CursorMacroEstimateClient.swift */,
+				F0020000000000000000004F /* FoodShareService.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -325,6 +330,7 @@
 				F0020000000000000000003D /* AIFoodEstimateView.swift */,
 				F0020000000000000000004E /* MenuEstimateView.swift */,
 				F0020000000000000000003E /* FoodLibraryView.swift */,
+				F00200000000000000000050 /* FoodShareImportView.swift */,
 			);
 			path = Food;
 			sourceTree = "<group>";
@@ -533,6 +539,8 @@
 				F00100000000000000000049 /* AIMacroEstimateService.swift in Sources */,
 				F0010000000000000000004A /* CursorMacroEstimateClient.swift in Sources */,
 				F0010000000000000000004B /* MenuEstimateView.swift in Sources */,
+				F0010000000000000000004F /* FoodShareService.swift in Sources */,
+				F00100000000000000000050 /* FoodShareImportView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -604,7 +612,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.6;
+				MARKETING_VERSION = 1.7;
 				PRODUCT_BUNDLE_IDENTIFIER = com.belessfat.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -634,7 +642,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.6;
+				MARKETING_VERSION = 1.7;
 				PRODUCT_BUNDLE_IDENTIFIER = com.belessfat.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
