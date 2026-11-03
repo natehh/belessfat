@@ -406,7 +406,7 @@ private struct ProgressPhotoMultiPicker: View {
                                         .clipShape(RoundedRectangle(cornerRadius: 6))
                                     VStack(alignment: .leading) {
                                         Text(photo.createdAt.formatted(date: .omitted, time: .shortened))
-                                        if let weight = photo.weightLabel {
+                                        if let weight = ProgressPhotoService.weightSummary(for: photo.date, context: context) {
                                             Text(weight).font(.caption).foregroundStyle(.secondary)
                                         }
                                     }

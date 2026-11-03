@@ -89,19 +89,23 @@ enum ProgressPhotoService {
         try? context.save()
     }
 
-    /// Effective weight for prompts: day snapshot, else closest prior weigh-in.
+    /// Weight shown next to a progress-photo day, and sent with a body-fat estimate.
+    /// Prefers the average of weigh-ins in the 7 days ending on that date.
     static func weightForEstimate(on date: Date, context: ModelContext) -> (lbs: Double, label: String)? {
-        let snapshot = weightSnapshot(for: date, context: context)
-        if let daily = snapshot.weightLbs {
-            return (daily, "\(daily.formatted(.number.precision(.fractionLength(1)))) lbs (logged that day)")
-        }
-        if let avg = snapshot.weight7DayAvgLbs {
-            return (avg, "\(avg.formatted(.number.precision(.fractionLength(1)))) lbs (7-day average)")
+        if let average = GoalService.sevenDayAverageWeight(for: date, context: context) {
+            let formatted = average.formatted(.number.precision(.fractionLength(1)))
+            return (average, "\(formatted) lbs (7-day average)")
         }
         if let prior = GoalService.mostRecentWeight(onOrBefore: date, context: context) {
-            return (prior, "\(prior.formatted(.number.precision(.fractionLength(1)))) lbs (closest prior weigh-in)")
+            let formatted = prior.formatted(.number.precision(.fractionLength(1)))
+            return (prior, "\(formatted) lbs (closest prior weigh-in)")
         }
         return nil
+    }
+
+    static func weightSummary(for date: Date, context: ModelContext) -> String? {
+        guard let weight = weightForEstimate(on: date, context: context) else { return nil }
+        return "\(weight.lbs.formatted(.number.precision(.fractionLength(1)))) lbs"
     }
 
     static func bodyFatPercent(for date: Date, context: ModelContext) -> Double? {

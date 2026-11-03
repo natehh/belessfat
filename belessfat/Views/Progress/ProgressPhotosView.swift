@@ -52,11 +52,18 @@ struct ProgressPhotosView: View {
                         } header: {
                             HStack(spacing: 8) {
                                 Text(group.date.formatted(date: .abbreviated, time: .omitted))
-                                Spacer()
-                                if let bf = group.photos.compactMap(\.bodyFatPercent).first {
-                                    Text("\(bf.formatted(.number.precision(.fractionLength(1))))% BF")
-                                        .foregroundStyle(.secondary)
+                                Spacer(minLength: 8)
+                                HStack(spacing: 6) {
+                                    if let weight = ProgressPhotoService.weightSummary(for: group.date, context: context) {
+                                        Text(weight)
+                                    }
+                                    if let bf = group.photos.compactMap(\.bodyFatPercent).first {
+                                        Text("\(bf.formatted(.number.precision(.fractionLength(1))))% BF")
+                                    }
                                 }
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.8)
                                 if !compareMode {
                                     Button {
                                         openBodyFatEstimate(date: group.date, photos: group.photos)
@@ -251,6 +258,7 @@ struct ProgressPhotoImage: View {
 
 private struct ProgressPhotoDetailView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var context
     let photo: ProgressPhoto
     let onDelete: () -> Void
     var onEstimateBodyFat: (() -> Void)? = nil
@@ -266,8 +274,8 @@ private struct ProgressPhotoDetailView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 12))
 
                     LabeledContent("Date", value: photo.date.formatted(date: .abbreviated, time: .omitted))
-                    if let weightLabel = photo.weightLabel {
-                        LabeledContent("Weight", value: weightLabel)
+                    if let weight = ProgressPhotoService.weightForEstimate(on: photo.date, context: context) {
+                        LabeledContent("Weight", value: weight.label)
                     }
                     if let bodyFatLabel = photo.bodyFatLabel {
                         LabeledContent("Body fat", value: bodyFatLabel)
@@ -310,6 +318,7 @@ private struct ProgressPhotoDetailView: View {
 
 struct ProgressPhotoCompareView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var context
     let before: ProgressPhoto
     let after: ProgressPhoto
 
@@ -345,8 +354,8 @@ struct ProgressPhotoCompareView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 8))
             Text(photo.date.formatted(date: .abbreviated, time: .omitted))
                 .font(.caption)
-            if let weightLabel = photo.weightLabel {
-                Text(weightLabel)
+            if let weight = ProgressPhotoService.weightSummary(for: photo.date, context: context) {
+                Text(weight)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
