@@ -72,6 +72,7 @@ struct SettingsView: View {
         try? context.delete(model: WeightEntry.self)
         try? context.delete(model: BodyFatEntry.self)
         try? context.delete(model: WeightGoal.self)
+        try? context.delete(model: MacroTargetPeriod.self)
         try? context.delete(model: DailyHealthSnapshot.self)
         try? context.delete(model: MealTemplate.self)
         try? context.delete(model: FavoriteMeal.self)
@@ -150,13 +151,17 @@ private struct SettingsFormContent: View {
             }
 
             Section("Macro Targets") {
-                Toggle("Use Percentage Split", isOn: $settings.usePercentageMode)
-                    .onChange(of: settings.usePercentageMode) { _, enabled in
-                        if enabled {
-                            settings.applyPercentageTargets()
+                Toggle("Use Percentage Split", isOn: Binding(
+                    get: { settings.usePercentageMode },
+                    set: { enabled in
+                        commitMacroTargets {
+                            settings.usePercentageMode = enabled
+                            if enabled {
+                                settings.applyPercentageTargets()
+                            }
                         }
-                        save()
                     }
+                ))
                 if settings.usePercentageMode {
                     Picker("Preset", selection: presetBinding) {
                         ForEach(MacroSplitPreset.allCases) { p in
@@ -300,15 +305,16 @@ private struct SettingsFormContent: View {
     private var presetBinding: Binding<MacroSplitPreset> {
         Binding(
             get: { settings.macroSplitPreset },
-            set: {
-                settings.macroSplitPreset = $0
-                if $0 != .custom {
-                    settings.proteinPercent = $0.proteinPercent
-                    settings.carbsPercent = $0.carbsPercent
-                    settings.fatPercent = $0.fatPercent
+            set: { preset in
+                commitMacroTargets {
+                    settings.macroSplitPreset = preset
+                    if preset != .custom {
+                        settings.proteinPercent = preset.proteinPercent
+                        settings.carbsPercent = preset.carbsPercent
+                        settings.fatPercent = preset.fatPercent
+                    }
+                    settings.applyPercentageTargets()
                 }
-                settings.applyPercentageTargets()
-                save()
             }
         )
     }
@@ -316,12 +322,13 @@ private struct SettingsFormContent: View {
     private var caloriesBinding: Binding<Double> {
         Binding(
             get: { settings.dailyCalories },
-            set: {
-                settings.dailyCalories = $0
-                if settings.usePercentageMode {
-                    settings.applyPercentageTargets()
+            set: { calories in
+                commitMacroTargets {
+                    settings.dailyCalories = calories
+                    if settings.usePercentageMode {
+                        settings.applyPercentageTargets()
+                    }
                 }
-                save()
             }
         )
     }
@@ -329,11 +336,12 @@ private struct SettingsFormContent: View {
     private func percentBinding(_ keyPath: ReferenceWritableKeyPath<UserSettings, Double>) -> Binding<Double> {
         Binding(
             get: { settings[keyPath: keyPath] },
-            set: {
-                settings[keyPath: keyPath] = $0
-                settings.macroSplitPreset = .custom
-                settings.applyPercentageTargets()
-                save()
+            set: { value in
+                commitMacroTargets {
+                    settings[keyPath: keyPath] = value
+                    settings.macroSplitPreset = .custom
+                    settings.applyPercentageTargets()
+                }
             }
         )
     }
@@ -341,9 +349,10 @@ private struct SettingsFormContent: View {
     private func macroBinding(_ keyPath: ReferenceWritableKeyPath<UserSettings, Double>) -> Binding<Double> {
         Binding(
             get: { settings[keyPath: keyPath] },
-            set: {
-                settings[keyPath: keyPath] = $0
-                save()
+            set: { value in
+                commitMacroTargets {
+                    settings[keyPath: keyPath] = value
+                }
             }
         )
     }
@@ -351,6 +360,17 @@ private struct SettingsFormContent: View {
     private func save() {
         settings.normalizeDefaults()
         try? context.save()
+    }
+
+    private func commitMacroTargets(_ mutate: () -> Void) {
+        let previous = GoalService.macroTargets(from: settings)
+        mutate()
+        GoalService.recordMacroTargetChange(
+            from: previous,
+            to: GoalService.macroTargets(from: settings),
+            context: context
+        )
+        save()
     }
 
     private var sexBinding: Binding<BiologicalSex?> {

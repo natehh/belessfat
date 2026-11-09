@@ -2,14 +2,15 @@ import SwiftUI
 
 struct MacroProgressView: View {
     let totals: MacroTotals
-    let settings: UserSettings
+    let targets: GoalService.MacroTargets
+    let mode: MacroDisplayMode
 
     var body: some View {
         VStack(spacing: 12) {
-            MacroBar(label: "Calories", current: totals.calories, target: settings.dailyCalories, unit: "kcal", color: .orange, mode: settings.macroDisplayMode)
-            MacroBar(label: "Protein", current: totals.protein, target: settings.dailyProtein, unit: "g", color: .blue, mode: settings.macroDisplayMode)
-            MacroBar(label: "Carbs", current: totals.carbs, target: settings.dailyCarbs, unit: "g", color: .green, mode: settings.macroDisplayMode)
-            MacroBar(label: "Fat", current: totals.fat, target: settings.dailyFat, unit: "g", color: .purple, mode: settings.macroDisplayMode)
+            MacroBar(label: "Calories", current: totals.calories, target: targets.calories, unit: "kcal", color: .orange, mode: mode)
+            MacroBar(label: "Protein", current: totals.protein, target: targets.protein, unit: "g", color: .blue, mode: mode)
+            MacroBar(label: "Carbs", current: totals.carbs, target: targets.carbs, unit: "g", color: .green, mode: mode)
+            MacroBar(label: "Fat", current: totals.fat, target: targets.fat, unit: "g", color: .purple, mode: mode)
         }
         .padding()
         .background(Color(.secondarySystemBackground))
