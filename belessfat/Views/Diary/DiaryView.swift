@@ -103,6 +103,17 @@ struct DiaryView: View {
         settings.dailyStepTarget * 7
     }
 
+    private var weekCalorieCap: Double {
+        if let override = settings.weeklyCalorieOverride {
+            return override
+        }
+        let start = DateHelpers.weekStart(containing: selectedDate, weekStartsOn: settings.weekStartDay)
+        let end = DateHelpers.weekEnd(containing: selectedDate, weekStartsOn: settings.weekStartDay)
+        return DateHelpers.daysBetween(start, end).reduce(0) { total, day in
+            total + GoalService.macroTargets(on: day, settings: settings, context: context).calories
+        }
+    }
+
     private var weightGoal: WeightGoal? {
         weightGoals.first(where: \.isActive) ?? weightGoals.first
     }
@@ -177,7 +188,11 @@ struct DiaryView: View {
 
                 if showMacroSectionForScreenshot {
                     Section {
-                        MacroProgressView(totals: totals, settings: settings)
+                        MacroProgressView(
+                            totals: totals,
+                            targets: GoalService.macroTargets(on: selectedDate, settings: settings, context: context),
+                            mode: settings.macroDisplayMode
+                        )
                             .listRowInsets(EdgeInsets())
                             .listRowBackground(Color.clear)
                     }
@@ -373,7 +388,7 @@ struct DiaryView: View {
 
                 Section {
                     if settings.weeklyBudgetEnabled {
-                        WeeklyBudgetBar(consumed: weekTotals.calories, cap: settings.weeklyCalorieCap, weekLabel: weekRangeLabel)
+                        WeeklyBudgetBar(consumed: weekTotals.calories, cap: weekCalorieCap, weekLabel: weekRangeLabel)
                             .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                     }
                     WeeklyStepsBar(steps: weekSteps, cap: weeklyStepCap, weekLabel: weekRangeLabel)

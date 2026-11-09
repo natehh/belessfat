@@ -13,6 +13,7 @@ struct ReportsDashboardView: View {
     @Environment(\.modelContext) private var context
     @EnvironmentObject private var healthKit: HealthKitService
     @Query(sort: \UserSettings.id) private var settingsQuery: [UserSettings]
+    @Query(sort: \WeightGoal.startDate) private var weightGoals: [WeightGoal]
     @State private var timeframe: ReportTimeframe = .week
     @State private var customStart = Calendar.current.date(byAdding: .day, value: -6, to: Date())!
     @State private var customEnd = Date()
@@ -27,6 +28,7 @@ struct ReportsDashboardView: View {
     @State private var bodyFatChartDate: Date?
     @State private var stepsChartDate: Date?
     @State private var activeCaloriesChartDate: Date?
+    @State private var showWeightGoalMarkers = false
 
     private var settings: UserSettings {
         settingsQuery.first ?? GoalService.settings(context: context)
@@ -75,6 +77,10 @@ struct ReportsDashboardView: View {
                         }
                         if !weeklyRows.isEmpty {
                             weeklySummaryTable
+                        }
+                        if !weightGoals.isEmpty {
+                            Toggle("Show weight goal changes", isOn: $showWeightGoalMarkers)
+                                .font(.subheadline)
                         }
                         calorieChart
                             .id("reportsCharts")
@@ -702,6 +708,7 @@ struct ReportsDashboardView: View {
                     BarMark(x: .value("Date", row.date, unit: .day), y: .value("Calories", row.calories))
                         .foregroundStyle(.orange.gradient)
                 }
+                weightGoalChangeMarks()
                 if let date = calorieChartDate {
                     RuleMark(x: .value("Date", date, unit: .day))
                         .foregroundStyle(Color.primary.opacity(0.25))
@@ -747,6 +754,7 @@ struct ReportsDashboardView: View {
                     )
                     .foregroundStyle(by: .value("Macro", "Fat"))
                 }
+                weightGoalChangeMarks()
                 if let date = macroChartDate {
                     RuleMark(x: .value("Date", date, unit: .day))
                         .foregroundStyle(Color.primary.opacity(0.25))
@@ -809,6 +817,7 @@ struct ReportsDashboardView: View {
                     LineMark(x: .value("Date", point.date, unit: .day), y: .value("7-day MA", point.value))
                         .foregroundStyle(.orange)
                 }
+                weightGoalChangeMarks()
                 if let date = weightChartDate {
                     RuleMark(x: .value("Date", date, unit: .day))
                         .foregroundStyle(Color.primary.opacity(0.25))
@@ -850,6 +859,7 @@ struct ReportsDashboardView: View {
                     LineMark(x: .value("Date", point.date, unit: .day), y: .value("7-day MA", point.value))
                         .foregroundStyle(.orange)
                 }
+                weightGoalChangeMarks()
                 if let date = bodyFatChartDate {
                     RuleMark(x: .value("Date", date, unit: .day))
                         .foregroundStyle(Color.primary.opacity(0.25))
@@ -900,6 +910,7 @@ struct ReportsDashboardView: View {
                     BarMark(x: .value("Date", row.date, unit: .day), y: .value("Steps", row.steps))
                         .foregroundStyle(.cyan.gradient)
                 }
+                weightGoalChangeMarks()
                 if let date = stepsChartDate {
                     RuleMark(x: .value("Date", date, unit: .day))
                         .foregroundStyle(Color.primary.opacity(0.25))
@@ -928,6 +939,7 @@ struct ReportsDashboardView: View {
                         .foregroundStyle(.red)
                         .symbol(Circle().strokeBorder(lineWidth: 2))
                 }
+                weightGoalChangeMarks()
                 if let date = activeCaloriesChartDate {
                     RuleMark(x: .value("Date", date, unit: .day))
                         .foregroundStyle(Color.primary.opacity(0.25))
@@ -935,6 +947,28 @@ struct ReportsDashboardView: View {
                 }
             }
             .interactiveDateSelection($activeCaloriesChartDate)
+        }
+    }
+
+    private var weightGoalMarkerDates: [Date] {
+        let start = DateHelpers.startOfDay(range.start)
+        let end = DateHelpers.startOfDay(range.end)
+        var seen = Set<Date>()
+        return weightGoals.compactMap { goal in
+            let day = DateHelpers.startOfDay(goal.startDate)
+            guard day >= start, day <= end, seen.insert(day).inserted else { return nil }
+            return day
+        }
+    }
+
+    @ChartContentBuilder
+    private func weightGoalChangeMarks() -> some ChartContent {
+        if showWeightGoalMarkers {
+            ForEach(weightGoalMarkerDates, id: \.self) { day in
+                RuleMark(x: .value("Weight goal", day, unit: .day))
+                    .foregroundStyle(Color.indigo.opacity(0.75))
+                    .lineStyle(StrokeStyle(lineWidth: 1.25, dash: [1, 3]))
+            }
         }
     }
 

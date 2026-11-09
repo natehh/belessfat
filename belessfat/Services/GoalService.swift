@@ -201,6 +201,80 @@ enum GoalService {
         photo.bodyFatEstimatedAt ?? photo.createdAt
     }
 
+    struct MacroTargets: Equatable {
+        var calories: Double
+        var protein: Double
+        var carbs: Double
+        var fat: Double
+
+        func matches(_ other: MacroTargets) -> Bool {
+            abs(calories - other.calories) < 0.05
+                && abs(protein - other.protein) < 0.05
+                && abs(carbs - other.carbs) < 0.05
+                && abs(fat - other.fat) < 0.05
+        }
+    }
+
+    static func macroTargets(from settings: UserSettings) -> MacroTargets {
+        MacroTargets(
+            calories: settings.dailyCalories,
+            protein: settings.dailyProtein,
+            carbs: settings.dailyCarbs,
+            fat: settings.dailyFat
+        )
+    }
+
+    /// Targets in effect on `date`. Days before the first change use the current settings.
+    static func macroTargets(on date: Date, settings: UserSettings, context: ModelContext) -> MacroTargets {
+        let day = DateHelpers.startOfDay(date)
+        let match = macroTargetPeriods(context: context).last { $0.effectiveStart <= day }
+        guard let match else { return macroTargets(from: settings) }
+        return MacroTargets(
+            calories: match.dailyCalories,
+            protein: match.dailyProtein,
+            carbs: match.dailyCarbs,
+            fat: match.dailyFat
+        )
+    }
+
+    /// Locks the previous targets to earlier days and applies `new` from today.
+    /// Another edit on the same day updates today instead of adding a period.
+    static func recordMacroTargetChange(from old: MacroTargets, to new: MacroTargets, context: ModelContext) {
+        guard !old.matches(new) else { return }
+        let today = DateHelpers.startOfDay(Date())
+        var periods = macroTargetPeriods(context: context)
+        if let todayPeriod = periods.first(where: { DateHelpers.isSameDay($0.effectiveStart, today) }) {
+            apply(new, to: todayPeriod)
+            return
+        }
+        if periods.isEmpty {
+            context.insert(period(starting: Date(timeIntervalSince1970: 0), targets: old))
+        }
+        context.insert(period(starting: today, targets: new))
+    }
+
+    private static func macroTargetPeriods(context: ModelContext) -> [MacroTargetPeriod] {
+        let periods = (try? context.fetch(FetchDescriptor<MacroTargetPeriod>())) ?? []
+        return periods.sorted { $0.effectiveStart < $1.effectiveStart }
+    }
+
+    private static func period(starting start: Date, targets: MacroTargets) -> MacroTargetPeriod {
+        MacroTargetPeriod(
+            effectiveStart: DateHelpers.startOfDay(start),
+            dailyCalories: targets.calories,
+            dailyProtein: targets.protein,
+            dailyCarbs: targets.carbs,
+            dailyFat: targets.fat
+        )
+    }
+
+    private static func apply(_ targets: MacroTargets, to period: MacroTargetPeriod) {
+        period.dailyCalories = targets.calories
+        period.dailyProtein = targets.protein
+        period.dailyCarbs = targets.carbs
+        period.dailyFat = targets.fat
+    }
+
     static func activeGoal(context: ModelContext) -> WeightGoal? {
         let all = (try? context.fetch(FetchDescriptor<WeightGoal>(
             sortBy: [SortDescriptor(\.targetDate, order: .reverse)]

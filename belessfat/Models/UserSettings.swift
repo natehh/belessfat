@@ -204,6 +204,31 @@ final class WeightGoal {
 }
 
 @Model
+final class MacroTargetPeriod {
+    var id: UUID
+    var effectiveStart: Date
+    var dailyCalories: Double
+    var dailyProtein: Double
+    var dailyCarbs: Double
+    var dailyFat: Double
+
+    init(
+        effectiveStart: Date,
+        dailyCalories: Double,
+        dailyProtein: Double,
+        dailyCarbs: Double,
+        dailyFat: Double
+    ) {
+        self.id = UUID()
+        self.effectiveStart = effectiveStart
+        self.dailyCalories = dailyCalories
+        self.dailyProtein = dailyProtein
+        self.dailyCarbs = dailyCarbs
+        self.dailyFat = dailyFat
+    }
+}
+
+@Model
 final class DailyHealthSnapshot {
     var id: UUID
     var date: Date
