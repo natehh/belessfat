@@ -133,6 +133,14 @@ private struct SettingsFormContent: View {
                     Text("HealthKit is not available on this device.")
                         .foregroundStyle(.secondary)
                 }
+                NumericStepperField(
+                    title: "Body Fat Offset",
+                    value: bodyFatOffsetBinding,
+                    range: -20...20,
+                    step: 0.1,
+                    format: "%+.1f",
+                    info: "Added to Apple Health body fat when it is recorded. Readings already saved stay as they are. Manual entries and photo estimates are unchanged."
+                )
             } header: {
                 Text("HealthKit")
             } footer: {
@@ -353,6 +361,17 @@ private struct SettingsFormContent: View {
                 commitMacroTargets {
                     settings[keyPath: keyPath] = value
                 }
+            }
+        )
+    }
+
+    private var bodyFatOffsetBinding: Binding<Double> {
+        Binding(
+            get: { settings.effectiveBodyFatOffset },
+            set: { newValue in
+                let rounded = (newValue * 10).rounded() / 10
+                settings.bodyFatOffset = rounded == 0 ? nil : rounded
+                save()
             }
         )
     }

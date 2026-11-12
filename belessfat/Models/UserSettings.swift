@@ -29,6 +29,13 @@ final class UserSettings {
     var heightInches: Double?
     var biologicalSexRaw: String?
     var birthYear: Int?
+    /// Percentage points added to Apple Health body-fat readings when they are recorded. nil = 0.
+    var bodyFatOffset: Double?
+
+    /// Offset applied to Health body fat imported after it is set. Already stored readings are left alone.
+    var effectiveBodyFatOffset: Double {
+        bodyFatOffset ?? 0
+    }
 
     var biologicalSex: BiologicalSex? {
         get { biologicalSexRaw.flatMap(BiologicalSex.init(rawValue:)) }

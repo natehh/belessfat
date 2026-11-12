@@ -7,9 +7,11 @@ struct NumericStepperField: View {
     var step: Double = 1
     var suffix: String = ""
     var format: String? = nil
+    var info: String? = nil
 
     @State private var text: String = ""
     @State private var isEditing = false
+    @State private var showInfo = false
 
     private var resolvedFormat: String {
         if let format { return format }
@@ -19,9 +21,27 @@ struct NumericStepperField: View {
     var body: some View {
         HStack {
             Text(title)
+            if let info {
+                Button {
+                    showInfo = true
+                } label: {
+                    Image(systemName: "info.circle")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.borderless)
+                .accessibilityLabel("About \(title)")
+                .popover(isPresented: $showInfo) {
+                    Text(info)
+                        .font(.subheadline)
+                        .padding()
+                        .frame(maxWidth: 280)
+                        .presentationCompactAdaptation(.popover)
+                }
+            }
             Spacer()
             DecimalPadTextField(
                 text: $text,
+                showsSignToggle: range.lowerBound < 0,
                 onCommit: commitText,
                 onEditingChanged: { isEditing = $0 }
             )
@@ -63,12 +83,14 @@ struct NumericStepperField: View {
             text = formatted(value)
             return
         }
+        let negative = range.lowerBound < 0 && trimmed.hasPrefix("-")
         let sanitized = trimmed.filter { "0123456789.".contains($0) }
         guard let parsed = Double(sanitized) else {
             text = formatted(value)
             return
         }
-        let clamped = min(max(parsed, range.lowerBound), range.upperBound)
+        let signed = negative ? -parsed : parsed
+        let clamped = min(max(signed, range.lowerBound), range.upperBound)
         value = clamped
         text = formatted(clamped)
     }

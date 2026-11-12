@@ -440,9 +440,11 @@ final class HealthKitService: ObservableObject {
             latestByDay[day] = sample
         }
 
+        let offset = GoalService.settings(context: context).effectiveBodyFatOffset
         var imported = 0
         for (day, sample) in latestByDay {
-            if GoalService.applyHealthKitBodyFat(sample.percent, recordedAt: sample.recordedAt, for: day, context: context) {
+            guard let percent = GoalService.adjustedHealthKitBodyFatPercent(sample.percent, offset: offset) else { continue }
+            if GoalService.applyHealthKitBodyFat(percent, recordedAt: sample.recordedAt, for: day, context: context) {
                 imported += 1
             }
         }
