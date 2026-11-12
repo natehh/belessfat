@@ -5,6 +5,7 @@ import UIKit
 struct DecimalPadTextField: UIViewRepresentable {
     @Binding var text: String
     var placeholder: String = ""
+    var showsSignToggle: Bool = false
     var onCommit: (() -> Void)?
     var onEditingChanged: ((Bool) -> Void)?
 
@@ -22,10 +23,23 @@ struct DecimalPadTextField: UIViewRepresentable {
 
         let toolbar = UIToolbar()
         toolbar.sizeToFit()
-        toolbar.items = [
-            UIBarButtonItem(barButtonSystemItem: .flexibleSpace, target: nil, action: nil),
-            UIBarButtonItem(title: "Done", style: .done, target: context.coordinator, action: #selector(Coordinator.doneTapped))
-        ]
+        var items: [UIBarButtonItem] = []
+        if showsSignToggle {
+            items.append(UIBarButtonItem(
+                title: "±",
+                style: .plain,
+                target: context.coordinator,
+                action: #selector(Coordinator.toggleSign)
+            ))
+        }
+        items.append(UIBarButtonItem(barButtonSystemItem: .flexibleSpace, target: nil, action: nil))
+        items.append(UIBarButtonItem(
+            title: "Done",
+            style: .done,
+            target: context.coordinator,
+            action: #selector(Coordinator.doneTapped)
+        ))
+        toolbar.items = items
         field.inputAccessoryView = toolbar
         context.coordinator.field = field
         return field
@@ -49,6 +63,22 @@ struct DecimalPadTextField: UIViewRepresentable {
 
         @objc func editingChanged(_ sender: UITextField) {
             parent.text = sender.text ?? ""
+        }
+
+        @objc func toggleSign() {
+            let current = (field?.text ?? parent.text).trimmingCharacters(in: .whitespaces)
+            let next: String
+            if current.hasPrefix("-") {
+                next = String(current.dropFirst())
+            } else if current.hasPrefix("+") {
+                next = "-" + current.dropFirst()
+            } else if current.isEmpty {
+                next = "-"
+            } else {
+                next = "-" + current
+            }
+            field?.text = next
+            parent.text = next
         }
 
         @objc func doneTapped() {

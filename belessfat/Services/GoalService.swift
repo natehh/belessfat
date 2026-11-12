@@ -123,6 +123,13 @@ enum GoalService {
         try? context.save()
     }
 
+    /// Adds the user's offset to a Health body-fat percentage. Nil when the result is outside 0–100.
+    static func adjustedHealthKitBodyFatPercent(_ percent: Double, offset: Double) -> Double? {
+        let adjusted = percent + offset
+        guard adjusted > 0, adjusted < 100 else { return nil }
+        return adjusted
+    }
+
     /// Applies a HealthKit body-fat sample when it is newer than the stored value for that day.
     @discardableResult
     static func applyHealthKitBodyFat(_ percent: Double, recordedAt: Date, for date: Date, context: ModelContext) -> Bool {
