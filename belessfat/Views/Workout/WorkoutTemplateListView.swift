@@ -95,6 +95,9 @@ struct WorkoutTemplateEditView: View {
             List {
                 Section {
                     TextField("Name", text: $template.name)
+                        .onChange(of: template.name) { _, _ in
+                            WorkoutService.renameSnapshots(for: template, context: context)
+                        }
                 }
                 Section("Exercises") {
                     ForEach(template.sortedExercises, id: \.id) { item in

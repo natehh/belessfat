@@ -9,6 +9,9 @@ final class WorkoutSession {
     var durationMinutes: Double
     var notes: String?
     var template: WorkoutTemplate?
+    /// Kept after the template is deleted so the log still has a title.
+    var templateName: String?
+    var templateID: UUID?
     var syncToHealthKit: Bool
     var treadmillSpeedMph: Double?
     var treadmillInclinePercent: Double?
@@ -97,6 +100,9 @@ final class WorkoutSession {
     var displayTitle: String {
         switch workoutType {
         case .strength:
+            if let templateName = templateName?.trimmingCharacters(in: .whitespacesAndNewlines), !templateName.isEmpty {
+                return templateName
+            }
             return template?.name ?? "Weight Training"
         case .tennisSingles: return "Tennis (Singles)"
         case .tennisDoubles: return "Tennis (Doubles)"

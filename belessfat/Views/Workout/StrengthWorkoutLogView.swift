@@ -95,7 +95,7 @@ struct StrengthWorkoutLogView: View {
                 )
             }
             Toggle("Sync calories to HealthKit", isOn: $syncToHealthKit)
-            if prefilledFromLastSession, let templateName = session.template?.name {
+            if prefilledFromLastSession, let templateName = session.templateName ?? session.template?.name {
                 Text("Prefilled from your last \(templateName) workout.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -173,7 +173,7 @@ struct StrengthWorkoutLogView: View {
                     Button("Create Custom Exercise") { showCustomExercise = true }
                 }
             }
-            .navigationTitle(session.template?.name ?? "Weight Training")
+            .navigationTitle(session.displayTitle)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {

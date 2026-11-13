@@ -8,6 +8,9 @@ final class WorkoutTemplate {
     var createdAt: Date
     @Relationship(deleteRule: .cascade, inverse: \WorkoutTemplateExercise.template)
     var exercises: [WorkoutTemplateExercise]
+    /// Logged workouts keep their own copy of the name. Deleting the template clears this link.
+    @Relationship(deleteRule: .nullify, inverse: \WorkoutSession.template)
+    var sessions: [WorkoutSession] = []
 
     init(name: String) {
         self.id = UUID()
