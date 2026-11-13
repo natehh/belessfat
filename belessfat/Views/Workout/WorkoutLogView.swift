@@ -6,7 +6,7 @@ struct WorkoutLogView: View {
     @EnvironmentObject private var healthKit: HealthKitService
     @Query(sort: \WorkoutSession.createdAt, order: .forward) private var allSessions: [WorkoutSession]
     @State private var selectedDate = Date()
-    @State private var showAddWorkout = false
+    @State private var addWorkoutDate: LoggedWorkoutDay?
     @State private var showTemplates = false
     @State private var editingSession: WorkoutSession?
 
@@ -54,7 +54,7 @@ struct WorkoutLogView: View {
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
-                        showAddWorkout = true
+                        addWorkoutDate = LoggedWorkoutDay(date: selectedDate)
                     } label: {
                         Image(systemName: "plus")
                     }
@@ -63,8 +63,8 @@ struct WorkoutLogView: View {
             .safeAreaInset(edge: .top) {
                 dayPicker
             }
-            .sheet(isPresented: $showAddWorkout) {
-                AddWorkoutSheet(date: selectedDate)
+            .sheet(item: $addWorkoutDate) { day in
+                AddWorkoutSheet(date: day.date)
             }
             .sheet(isPresented: $showTemplates) {
                 WorkoutTemplateListView()
@@ -164,3 +164,8 @@ struct WorkoutSessionRow: View {
 }
 
 extension WorkoutSession: Identifiable {}
+
+private struct LoggedWorkoutDay: Identifiable {
+    let date: Date
+    var id: Date { date }
+}

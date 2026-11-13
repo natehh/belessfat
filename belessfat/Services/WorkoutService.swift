@@ -152,7 +152,40 @@ enum WorkoutService {
         try? context.save()
     }
 
+    static func renameSnapshots(for template: WorkoutTemplate, context: ModelContext) {
+        let name = template.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+        let templateId = template.id
+        let sessions = (try? context.fetch(FetchDescriptor<WorkoutSession>())) ?? []
+        var changed = false
+        for session in sessions where session.templateID == templateId || session.template?.id == templateId {
+            if session.templateName != name {
+                session.templateName = name
+                changed = true
+            }
+            if session.templateID != templateId {
+                session.templateID = templateId
+                changed = true
+            }
+        }
+        if changed {
+            try? context.save()
+        }
+    }
+
     static func deleteTemplate(_ template: WorkoutTemplate, context: ModelContext) {
+        let name = template.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let templateId = template.id
+        let sessions = (try? context.fetch(FetchDescriptor<WorkoutSession>())) ?? []
+        for session in sessions {
+            let linked = session.templateID == templateId || session.template?.id == templateId
+            guard linked else { continue }
+            if session.templateName?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false {
+                session.templateName = name
+            }
+            session.templateID = templateId
+            session.template = nil
+        }
         context.delete(template)
         try? context.save()
     }
@@ -343,15 +376,14 @@ enum WorkoutService {
 
     static func defaultWorkoutEnd(for diaryDate: Date) -> Date {
         let now = Date()
-        guard !DateHelpers.isSameDay(diaryDate, now) else { return now }
+        if DateHelpers.isSameDay(diaryDate, now) { return now }
 
         let calendar = Calendar.current
         let time = calendar.dateComponents([.hour, .minute], from: now)
         var day = calendar.dateComponents([.year, .month, .day], from: diaryDate)
         day.hour = time.hour
         day.minute = time.minute
-        guard let combined = calendar.date(from: day) else { return now }
-        return combined > now ? now : combined
+        return calendar.date(from: day) ?? diaryDate
     }
 
     static func createStrengthSession(
@@ -370,6 +402,8 @@ enum WorkoutService {
             syncToHealthKit: syncToHealthKit
         )
         session.template = template
+        session.templateID = template?.id
+        session.templateName = template?.name
         session.isLive = isLive
         if isLive {
             let start = Date()
@@ -398,12 +432,17 @@ enum WorkoutService {
         context: ModelContext,
         healthKit: HealthKitService
     ) async {
-        let end = Date()
-        let elapsed = session.activeElapsed(at: end)
+        let loggedDay = session.date
+        let elapsed = session.activeElapsed(at: Date())
+        let end = DateHelpers.isSameDay(loggedDay, Date()) ? Date() : defaultWorkoutEnd(for: loggedDay)
         session.isInProgress = false
         session.resumedAt = nil
         session.workoutEndAt = end
+        session.date = DateHelpers.startOfDay(loggedDay)
         session.durationMinutes = max(elapsed / 60.0, 1.0 / 60.0)
+        if !DateHelpers.isSameDay(loggedDay, Date()) {
+            session.startedAt = end.addingTimeInterval(-session.durationMinutes * 60)
+        }
         try? context.save()
         await finalizeStrengthSession(session, context: context, healthKit: healthKit)
     }
@@ -422,11 +461,21 @@ enum WorkoutService {
         )
         let sessions = (try? context.fetch(descriptor)) ?? []
         return sessions.first { session in
-            session.template?.id == templateId &&
+            rememberedTemplateID(session) == templateId &&
             session.id != excludingId &&
             !session.isInProgress &&
             !session.setLogs.isEmpty
         }
+    }
+
+    private static func rememberedTemplateID(_ session: WorkoutSession) -> UUID? {
+        if let templateID = session.templateID { return templateID }
+        guard let template = session.template else { return nil }
+        session.templateID = template.id
+        if session.templateName?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false {
+            session.templateName = template.name
+        }
+        return template.id
     }
 
     static func seedSessionFromTemplate(

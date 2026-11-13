@@ -14,7 +14,15 @@ struct AddWorkoutSheet: View {
     @State private var useEmptySession = false
     @State private var syncToHealthKit = true
     @State private var durationMinutes = 45.0
-    @State private var workoutEndAt = Date()
+    @State private var logDate: Date
+    @State private var workoutEndAt: Date
+
+    init(date: Date) {
+        self.date = date
+        let day = DateHelpers.startOfDay(date)
+        _logDate = State(initialValue: day)
+        _workoutEndAt = State(initialValue: WorkoutService.defaultWorkoutEnd(for: day))
+    }
 
     // Cardio fields
     @State private var treadmillSpeed = 3.5
@@ -42,6 +50,9 @@ struct AddWorkoutSheet: View {
     var body: some View {
         NavigationStack {
             Form {
+                Section {
+                    DatePicker("Day", selection: $logDate, displayedComponents: .date)
+                }
                 Section("Workout Type") {
                     Picker("Type", selection: $workoutType) {
                         ForEach(WorkoutType.allCases) { type in
@@ -103,10 +114,18 @@ struct AddWorkoutSheet: View {
                 )
             }
             .onAppear {
-                workoutEndAt = WorkoutService.defaultWorkoutEnd(for: date)
                 if selectedTemplate == nil {
                     selectedTemplate = templates.first
                 }
+            }
+            .onChange(of: logDate) { _, newDay in
+                let updated = WorkoutService.defaultWorkoutEnd(for: newDay)
+                guard !DateHelpers.isSameDay(updated, workoutEndAt) else { return }
+                workoutEndAt = updated
+            }
+            .onChange(of: workoutEndAt) { _, newEnd in
+                guard !DateHelpers.isSameDay(newEnd, logDate) else { return }
+                logDate = DateHelpers.startOfDay(newEnd)
             }
         }
     }
@@ -221,7 +240,7 @@ struct AddWorkoutSheet: View {
             let template = useEmptySession ? nil : selectedTemplate
             let isLive = template != nil
             let session = WorkoutService.createStrengthSession(
-                date: date,
+                date: logDate,
                 template: template,
                 syncToHealthKit: syncToHealthKit,
                 durationMinutes: durationMinutes,
@@ -235,7 +254,7 @@ struct AddWorkoutSheet: View {
             createdStrengthSession = session
         case .tennisSingles, .tennisDoubles, .treadmill, .swimming:
             let session = WorkoutSession(
-                date: date,
+                date: logDate,
                 workoutType: workoutType,
                 durationMinutes: durationMinutes,
                 syncToHealthKit: syncToHealthKit
