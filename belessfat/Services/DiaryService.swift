@@ -428,6 +428,72 @@ struct DiaryClipboardItem {
     }
 }
 
+/// Days left out of calorie averages and the weekly calorie budget.
+@MainActor
+final class CalorieTrackingDays: ObservableObject {
+    static let shared = CalorieTrackingDays()
+
+    @Published private(set) var manualExclusions: Set<Date>
+    private static let key = "calorieTrackingExcludedDayStarts"
+
+    private init() {
+        manualExclusions = Set((UserDefaults.standard.stringArray(forKey: Self.key) ?? []).compactMap(Self.date(from:)))
+    }
+
+    func isManuallyExcluded(_ date: Date) -> Bool {
+        manualExclusions.contains(DateHelpers.startOfDay(date))
+    }
+
+    /// Past days with no food drop out. Today and later days stay until that day ends with no food.
+    /// A manual exclusion drops the day even when food is logged.
+    func countsTowardBudget(on date: Date, hasFood: Bool, now: Date = Date()) -> Bool {
+        if isManuallyExcluded(date) { return false }
+        let day = DateHelpers.startOfDay(date)
+        let today = DateHelpers.startOfDay(now)
+        if day < today && !hasFood { return false }
+        return true
+    }
+
+    /// Calorie and macro averages only include days with food, minus manual exclusions.
+    func countsTowardCalorieAverages(on date: Date, hasFood: Bool) -> Bool {
+        if isManuallyExcluded(date) { return false }
+        return hasFood
+    }
+
+    func setManuallyExcluded(_ excluded: Bool, on date: Date) {
+        let day = DateHelpers.startOfDay(date)
+        var next = manualExclusions
+        if excluded {
+            next.insert(day)
+        } else {
+            next.remove(day)
+        }
+        manualExclusions = next
+        let values = next.map(Self.string(from:)).sorted()
+        if values.isEmpty {
+            UserDefaults.standard.removeObject(forKey: Self.key)
+        } else {
+            UserDefaults.standard.set(values, forKey: Self.key)
+        }
+    }
+
+    private static func string(from date: Date) -> String {
+        formatter.string(from: DateHelpers.startOfDay(date))
+    }
+
+    private static func date(from string: String) -> Date? {
+        formatter.date(from: string).map(DateHelpers.startOfDay)
+    }
+
+    private static let formatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar.current
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter
+    }()
+}
+
 @MainActor
 final class DiaryClipboard: ObservableObject {
     static let shared = DiaryClipboard()

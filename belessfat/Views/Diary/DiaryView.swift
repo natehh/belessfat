@@ -7,6 +7,7 @@ struct DiaryView: View {
     @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject private var healthKit: HealthKitService
     @EnvironmentObject private var quickActions: QuickActionRouter
+    @ObservedObject private var calorieTracking = CalorieTrackingDays.shared
     @Query(sort: \UserSettings.id) private var settingsQuery: [UserSettings]
     @Query(sort: \LogEntry.createdAt) private var allLogEntries: [LogEntry]
     @Query(sort: \DailyHealthSnapshot.date, order: .reverse) private var healthSnapshots: [DailyHealthSnapshot]
@@ -54,7 +55,7 @@ struct DiaryView: View {
             DateHelpers.weekEnd(containing: selectedDate, weekStartsOn: settings.weekStartDay)
         )
         return allLogEntries
-            .filter { $0.date >= start && $0.date < endExclusive }
+            .filter { $0.date >= start && $0.date < endExclusive && countsTowardBudget($0.date) }
             .reduce(.zero) { $0 + $1.macros }
     }
 
@@ -110,8 +111,17 @@ struct DiaryView: View {
         let start = DateHelpers.weekStart(containing: selectedDate, weekStartsOn: settings.weekStartDay)
         let end = DateHelpers.weekEnd(containing: selectedDate, weekStartsOn: settings.weekStartDay)
         return DateHelpers.daysBetween(start, end).reduce(0) { total, day in
-            total + GoalService.macroTargets(on: day, settings: settings, context: context).calories
+            guard countsTowardBudget(day) else { return total }
+            return total + GoalService.macroTargets(on: day, settings: settings, context: context).calories
         }
+    }
+
+    private func countsTowardBudget(_ date: Date) -> Bool {
+        calorieTracking.countsTowardBudget(on: date, hasFood: hasFood(on: date))
+    }
+
+    private func hasFood(on date: Date) -> Bool {
+        allLogEntries.contains { DateHelpers.isSameDay($0.date, date) }
     }
 
     private var weightGoal: WeightGoal? {
@@ -447,6 +457,12 @@ struct DiaryView: View {
                 Button("Log Favorite Meal") { showFavorites = true }
                 Button("Save Today as Favorite") { saveAsFavorite() }
                 Button("Add Progress Photo") { showProgressPhotoCapture = true }
+                Button(calorieTracking.isManuallyExcluded(selectedDate) ? "Include This Day in Tracking" : "Exclude This Day from Tracking") {
+                    calorieTracking.setManuallyExcluded(
+                        !calorieTracking.isManuallyExcluded(selectedDate),
+                        on: selectedDate
+                    )
+                }
                 Button("Cancel", role: .cancel) {}
             }
             .onAppear {

@@ -12,6 +12,7 @@ private struct GoalCardData {
 struct ReportsDashboardView: View {
     @Environment(\.modelContext) private var context
     @EnvironmentObject private var healthKit: HealthKitService
+    @ObservedObject private var calorieTracking = CalorieTrackingDays.shared
     @Query(sort: \UserSettings.id) private var settingsQuery: [UserSettings]
     @Query(sort: \WeightGoal.startDate) private var weightGoals: [WeightGoal]
     @State private var timeframe: ReportTimeframe = .week
@@ -128,6 +129,7 @@ struct ReportsDashboardView: View {
                 .onChange(of: customStart) { _, _ in recompute() }
                 .onChange(of: customEnd) { _, _ in recompute() }
                 .onChange(of: showComparison) { _, _ in recompute() }
+                .onChange(of: calorieTracking.manualExclusions) { _, _ in recompute() }
                 #if DEBUG
                 .task {
                     guard AppStoreScreenshotSeeder.isEnabled,
