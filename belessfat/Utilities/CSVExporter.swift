@@ -11,6 +11,7 @@ struct ParsedLabelNutrition {
     var warnings: [String]
 }
 
+@MainActor
 enum CSVExporter {
     struct ExportOptions {
         var includeCalories: Bool = true
@@ -103,18 +104,7 @@ enum CSVExporter {
         }
         return buckets.compactMap { bucket -> [String]? in
             guard let first = bucket.first, let last = bucket.last else { return nil }
-            let count = Double(bucket.count)
-            let avg = ReportService.DailyReportRow(
-                date: first.date,
-                calories: bucket.map(\.calories).reduce(0, +) / count,
-                protein: bucket.map(\.protein).reduce(0, +) / count,
-                carbs: bucket.map(\.carbs).reduce(0, +) / count,
-                fat: bucket.map(\.fat).reduce(0, +) / count,
-                weight: bucket.compactMap(\.weight).nilIfEmpty.map { $0.reduce(0, +) / Double($0.count) },
-                steps: Int(Double(bucket.map(\.steps).reduce(0, +)) / count),
-                activeCalories: bucket.map(\.activeCalories).reduce(0, +) / count,
-                netCalories: bucket.map(\.netCalories).reduce(0, +) / count
-            )
+            guard let avg = ReportService.averages(rows: bucket) else { return nil }
             return buildRow(row: avg, options: options, start: first.date, end: last.date)
         }
     }

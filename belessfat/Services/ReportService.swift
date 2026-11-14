@@ -14,6 +14,7 @@ enum ReportService {
         var steps: Int
         var activeCalories: Double
         var netCalories: Double
+        var hasFood: Bool
     }
 
     struct PeriodComparison {
@@ -28,7 +29,8 @@ enum ReportService {
     static func dailyRows(from start: Date, to end: Date, context: ModelContext) -> [DailyReportRow] {
         let days = DateHelpers.daysBetween(start, end)
         return days.map { day in
-            let totals = DiaryService.totals(for: day, context: context)
+            let dayEntries = DiaryService.entries(for: day, context: context)
+            let totals = dayEntries.reduce(MacroTotals.zero) { $0 + $1.macros }
             let weight = GoalService.weightEntry(for: day, context: context)?.weightLbs
             let health = healthSnapshot(for: day, context: context)
             let active = health?.activeCalories ?? 0
@@ -41,7 +43,8 @@ enum ReportService {
                 weight: weight,
                 steps: health?.steps ?? 0,
                 activeCalories: active,
-                netCalories: totals.calories - active
+                netCalories: totals.calories - active,
+                hasFood: !dayEntries.isEmpty
             )
         }
     }
@@ -49,16 +52,21 @@ enum ReportService {
     static func averages(rows: [DailyReportRow]) -> DailyReportRow? {
         guard !rows.isEmpty else { return nil }
         let count = Double(rows.count)
+        let foodRows = rows.filter {
+            CalorieTrackingDays.shared.countsTowardCalorieAverages(on: $0.date, hasFood: $0.hasFood)
+        }
+        let foodCount = Double(foodRows.count)
         return DailyReportRow(
             date: rows.first!.date,
-            calories: rows.map(\.calories).reduce(0, +) / count,
-            protein: rows.map(\.protein).reduce(0, +) / count,
-            carbs: rows.map(\.carbs).reduce(0, +) / count,
-            fat: rows.map(\.fat).reduce(0, +) / count,
+            calories: foodCount > 0 ? foodRows.map(\.calories).reduce(0, +) / foodCount : 0,
+            protein: foodCount > 0 ? foodRows.map(\.protein).reduce(0, +) / foodCount : 0,
+            carbs: foodCount > 0 ? foodRows.map(\.carbs).reduce(0, +) / foodCount : 0,
+            fat: foodCount > 0 ? foodRows.map(\.fat).reduce(0, +) / foodCount : 0,
             weight: rows.compactMap(\.weight).nilIfEmpty.map { $0.reduce(0, +) / Double($0.count) },
             steps: Int(Double(rows.map(\.steps).reduce(0, +)) / count),
             activeCalories: rows.map(\.activeCalories).reduce(0, +) / count,
-            netCalories: rows.map(\.netCalories).reduce(0, +) / count
+            netCalories: foodCount > 0 ? foodRows.map(\.netCalories).reduce(0, +) / foodCount : 0,
+            hasFood: !foodRows.isEmpty
         )
     }
 
@@ -114,7 +122,9 @@ enum ReportService {
             let clampedEnd = min(weekEnd, rangeEnd)
             let daily = dailyRows(from: clampedStart, to: clampedEnd, context: context)
 
-            let calorieDays = daily.filter { $0.calories > 0 }
+            let calorieDays = daily.filter {
+                CalorieTrackingDays.shared.countsTowardCalorieAverages(on: $0.date, hasFood: $0.hasFood)
+            }
             let calorieAverage = calorieDays.isEmpty
                 ? nil
                 : calorieDays.map(\.calories).reduce(0, +) / Double(calorieDays.count)

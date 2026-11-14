@@ -112,6 +112,10 @@ enum TDEECalculator {
         let includedDays = Set(points.filter(\.isIncluded).map(\.date))
         let loggedCalories = points.compactMap { point -> Double? in
             guard includedDays.contains(point.date) else { return nil }
+            guard CalorieTrackingDays.shared.countsTowardCalorieAverages(
+                on: point.date,
+                hasFood: point.calories != nil
+            ) else { return nil }
             return point.calories
         }
         let includedWeights = weights.filter { includedDays.contains(DateHelpers.startOfDay($0.date)) }
