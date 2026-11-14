@@ -104,6 +104,7 @@ struct FoodBrowserView: View {
     @State private var isSearching = false
     @State private var errorMessage: String?
     @State private var searchTask: Task<Void, Never>?
+    @State private var searchGeneration = 0
 
     var body: some View {
         VStack(spacing: 0) {
@@ -342,7 +343,7 @@ struct FoodBrowserView: View {
             Text("Type at least 2 characters to search USDA and Open Food Facts.")
                 .foregroundStyle(.secondary)
         } else if remoteResults.isEmpty {
-            Text("No results. Check your connection.")
+            Text("No results.")
                 .foregroundStyle(.secondary)
         } else {
             ForEach(remoteResults, id: \.id) { food in
@@ -375,6 +376,7 @@ struct FoodBrowserView: View {
 
     private func scheduleSearch(for text: String) {
         searchTask?.cancel()
+        searchGeneration += 1
         guard selectedTab == .all else {
             remoteResults = []
             errorMessage = nil
@@ -388,25 +390,35 @@ struct FoodBrowserView: View {
             isSearching = false
             return
         }
+        let generation = searchGeneration
         searchTask = Task {
             try? await Task.sleep(for: .milliseconds(300))
             guard !Task.isCancelled else { return }
-            await runRemoteSearch(trimmed)
+            await runRemoteSearch(trimmed, generation: generation)
         }
     }
 
     @MainActor
-    private func runRemoteSearch(_ trimmed: String) async {
+    private func runRemoteSearch(_ trimmed: String, generation: Int) async {
+        guard generation == searchGeneration else { return }
         isSearching = true
         errorMessage = nil
         do {
             let remote = try await FoodService.searchRemote(query: trimmed)
+            guard generation == searchGeneration else { return }
             let customMatches = FoodService.searchCustomFoods(query: trimmed, context: context)
             remoteResults = FoodService.mergeFoodResultsForDisplay(remote: remote, custom: customMatches)
+            errorMessage = nil
+        } catch is CancellationError {
+            return
+        } catch let urlError as URLError where urlError.code == .cancelled {
+            return
         } catch {
-            errorMessage = "Search failed. Internet required for food lookup."
+            guard generation == searchGeneration else { return }
+            errorMessage = "Couldn't reach the food database. Try again."
             remoteResults = []
         }
+        guard generation == searchGeneration else { return }
         isSearching = false
     }
 }

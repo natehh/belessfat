@@ -186,9 +186,43 @@ enum FoodService {
     static func searchRemote(query: String) async throws -> [Food] {
         async let usdaResults = USDAClient.search(query: query)
         async let offResults = OpenFoodFactsClient.search(query: query)
-        let usda = (try? await usdaResults) ?? []
-        let off = (try? await offResults) ?? []
 
+        let usda: Result<[Food], Error>
+        do {
+            usda = .success(try await usdaResults)
+        } catch {
+            usda = .failure(error)
+        }
+        let off: Result<[Food], Error>
+        do {
+            off = .success(try await offResults)
+        } catch {
+            off = .failure(error)
+        }
+        try Task.checkCancellation()
+
+        switch (usda, off) {
+        case let (.success(usdaFoods), .success(offFoods)):
+            return mergeRemoteFoods(usdaFoods, offFoods)
+        case let (.success(usdaFoods), .failure(error)):
+            if isCancellation(error) { throw CancellationError() }
+            return mergeRemoteFoods(usdaFoods, [])
+        case let (.failure(error), .success(offFoods)):
+            if isCancellation(error) { throw CancellationError() }
+            return mergeRemoteFoods([], offFoods)
+        case let (.failure(usdaError), .failure(offError)):
+            if isCancellation(usdaError) || isCancellation(offError) { throw CancellationError() }
+            throw usdaError
+        }
+    }
+
+    private static func isCancellation(_ error: Error) -> Bool {
+        if error is CancellationError { return true }
+        if let urlError = error as? URLError, urlError.code == .cancelled { return true }
+        return false
+    }
+
+    private static func mergeRemoteFoods(_ usda: [Food], _ off: [Food]) -> [Food] {
         var seen = Set<String>()
         var merged: [Food] = []
         for food in usda + off {
