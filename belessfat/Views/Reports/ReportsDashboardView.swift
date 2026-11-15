@@ -5,6 +5,7 @@ import Charts
 private struct GoalCardData {
     let goal: WeightGoal
     let current: Double
+    let currentLabel: String
     let metrics: GoalMetrics
     let ahead: Double
 }
@@ -183,11 +184,13 @@ struct ReportsDashboardView: View {
 
         if let goal = GoalService.activeGoal(context: context) {
             let entries = GoalService.weightEntries(from: goal.startDate, to: Date(), context: context)
-            let current = entries.last?.weightLbs ?? goal.startWeightLbs
+            let progressWeight = GoalService.weightForGoalProgress(on: Date(), context: context)
+            let current = progressWeight.lbs ?? goal.startWeightLbs
             let metrics = GoalService.goalMetrics(currentWeight: current, goal: goal, entries: entries)
             goalCard = GoalCardData(
                 goal: goal,
                 current: current,
+                currentLabel: progressWeight.isSevenDayAverage ? "7-day avg" : "Current",
                 metrics: metrics,
                 ahead: metrics.progressPercent - metrics.timePercent
             )
@@ -489,7 +492,7 @@ struct ReportsDashboardView: View {
                 }
                 Spacer()
                 VStack {
-                    Text("Current")
+                    Text(data.currentLabel)
                     Text("\(current.formatted()) lbs")
                         .fontWeight(.semibold)
                 }

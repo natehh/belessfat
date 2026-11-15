@@ -215,7 +215,8 @@ struct DiaryView: View {
                         netCaloriesRow
                         weightSection
                         if let goal = weightGoal {
-                            let current = displayedWeightLbs ?? goal.startWeightLbs
+                            let progressWeight = GoalService.weightForGoalProgress(on: selectedDate, context: context)
+                            let current = progressWeight.lbs ?? goal.startWeightLbs
                             let metrics = GoalService.goalMetrics(
                                 currentWeight: current,
                                 goal: goal,
@@ -226,6 +227,7 @@ struct DiaryView: View {
                                 goal: goal,
                                 metrics: metrics,
                                 currentWeight: current,
+                                currentLabel: progressWeight.isSevenDayAverage ? "7-day avg" : "Current",
                                 onEdit: { showWeightGoal = true }
                             )
                                 .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
