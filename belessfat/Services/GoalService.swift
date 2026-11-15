@@ -96,6 +96,14 @@ enum GoalService {
         return entries.map(\.weightLbs).reduce(0, +) / Double(entries.count)
     }
 
+    /// Weight used for goal progress. Prefers the mean of weigh-ins in the 7 days ending on `date`.
+    static func weightForGoalProgress(on date: Date, context: ModelContext) -> (lbs: Double?, isSevenDayAverage: Bool) {
+        if let average = sevenDayAverageWeight(for: date, context: context) {
+            return (average, true)
+        }
+        return (mostRecentWeight(onOrBefore: date, context: context), false)
+    }
+
     static func mostRecentWeight(onOrBefore date: Date, context: ModelContext) -> Double? {
         let day = DateHelpers.startOfDay(date)
         let all = (try? context.fetch(FetchDescriptor<WeightEntry>(

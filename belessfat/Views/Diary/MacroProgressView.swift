@@ -220,6 +220,7 @@ struct GoalProgressCard: View {
     let goal: WeightGoal
     let metrics: GoalMetrics
     let currentWeight: Double
+    var currentLabel: String = "Current"
     var onEdit: (() -> Void)? = nil
 
     var body: some View {
@@ -254,7 +255,7 @@ struct GoalProgressCard: View {
             }
             HStack {
                 VStack(alignment: .leading) {
-                    Text("Current")
+                    Text(currentLabel)
                     Text("\(currentWeight.formatted(.number.precision(.fractionLength(1)))) lbs")
                         .fontWeight(.semibold)
                 }
